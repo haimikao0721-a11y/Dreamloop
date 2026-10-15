@@ -22,6 +22,8 @@ import {
   findPlayer,
   makeAiState,
   findOpenCell,
+  isZeroState,
+  makeLight,
   makeTestRoom,
   runTicks,
   spawn,
@@ -226,7 +228,12 @@ interface InputRig {
   pressAttack(): void;
 }
 
-function createInputRig(wheelEl: HTMLElement, knobEl: HTMLElement, attackEl: HTMLElement): InputRig {
+function createInputRig(
+  wheelEl: HTMLElement,
+  knobEl: HTMLElement,
+  attackEl: HTMLElement,
+  onPlant?: () => void,
+): InputRig {
   let moveX = 0;
   let moveY = 0;
   let attackPending = false;
@@ -250,6 +257,11 @@ function createInputRig(wheelEl: HTMLElement, knobEl: HTMLElement, attackEl: HTM
     const k = e.key.toLowerCase();
     if (k === ' ' || k === 'j') {
       attackPending = true;
+      e.preventDefault();
+      return;
+    }
+    if (k === 'e') {
+      onPlant?.();
       e.preventDefault();
       return;
     }
@@ -373,7 +385,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
   hintBar.textContent =
-    '第 2 步原型：看怪物抬手 → 绕后或后退 → 它打空收招 → 你反击。';
+    '第 3 步原型：理智掉光地图会换一层皮。回到光里（壁灯 / 蜡烛）能爬回来。E 插蜡烛。';
 
   const wheel = document.createElement('div');
   wheel.className = 'rt-wheel';
@@ -457,9 +469,58 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
   if (player !== undefined) {
     void loadSprites('dream_archivist').then((s) => sprites.set(player.id, s));
+
+    /*
+     * 玩家手里那根蜡烛。
+     * 半径 4 格、每秒 +1 理智、燃料 90 秒 —— 见 docs/06 第九节。
+     *
+     * 恢复理智【只能】靠光。没有"吃药回理智"这个东西。
+     */
+    player.light = makeLight(4 * TILE, 1, 60 * 90);
   }
 
-  const rig = createInputRig(wheel, knob, attackBtn);
+  /*
+   * 墙上的固定光源。拿不走，所以它们定义了"安全区"在哪。
+   * 玩家要记住哪里有灯 —— 那是他理智掉下去之后唯一能去的地方。
+   */
+  for (const [lx, ly] of [
+    [clampCell(midC - 5, plan.cols), clampCell(midR, plan.rows)],
+    [clampCell(plan.cols - 3, plan.cols), clampCell(2, plan.rows)],
+  ] as const) {
+    const cell = findOpenCell(state.map, lx, ly);
+    spawn(state, {
+      kind: 'light',
+      x: cell.x * TILE + TILE / 2,
+      y: cell.y * TILE + TILE / 2,
+      // 半径 5 格、每秒 +2。比蜡烛强，但站在这儿就哪也去不了
+      light: makeLight(5 * TILE, 2, -1),
+    });
+  }
+
+  /** 把手上的蜡烛插到地上：范围更大、回得更快，但【烧得也更快】 */
+  function plantCarriedCandle(): boolean {
+    if (player === undefined) return false;
+    const light = player.light;
+    if (light === undefined || light.planted === true) return false;
+    const cell = findOpenCell(
+      state.map,
+      Math.round(player.body.x / TILE),
+      Math.round(player.body.y / TILE),
+    );
+    spawn(state, {
+      kind: 'light',
+      x: cell.x * TILE + TILE / 2,
+      y: cell.y * TILE + TILE / 2,
+      // 剩余燃料【减半】—— 这就是那个取舍的代价：回得快，但留不住
+      light: { radius: 6 * TILE, rate: 3, fuel: Math.max(1, Math.floor(light.fuel / 2)), planted: true },
+    });
+    player.light = undefined;
+    return true;
+  }
+
+  const rig = createInputRig(wheel, knob, attackBtn, () => {
+    plantCarriedCandle();
+  });
   rig.attach();
 
   const acc = createAccumulator();
@@ -538,17 +599,40 @@ export function startRtPrototype(root: HTMLElement): () => void {
     if (ctx === null) return;
     const { map } = state;
 
+    // 理智归零 → 整张地图换配色。这是第 3 步最直观的反馈：
+    // 玩家不用看数字就知道自己掉进去了
+    const zero = isZeroState(state.san);
+    const skin = zero ? tilesZero : tiles;
+
     for (let ty = 0; ty < map.h; ty++) {
       for (let tx = 0; tx < map.w; tx++) {
         const solid = map.tiles[ty * map.w + tx] !== TILE_FLOOR;
-        const img = solid ? tiles.wall : tiles.floor;
+        const img = solid ? skin.wall : skin.floor;
         if (usable(img)) {
           ctx.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
         } else {
-          ctx.fillStyle = solid ? '#272733' : '#12121a';
+          ctx.fillStyle = zero ? (solid ? '#331818' : '#1a0e0e') : (solid ? '#272733' : '#12121a');
           ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
         }
       }
+    }
+
+    // 光源的光晕。画在地形之上、实体之下 —— 照亮地面，但不盖住人
+    for (const e of state.entities) {
+      const light = e.light;
+      if (!e.alive || light === undefined || light.fuel === 0) continue;
+      const g = ctx.createRadialGradient(
+        e.body.x, e.body.y, 2,
+        e.body.x, e.body.y, light.radius,
+      );
+      const warm = zero ? '224,112,58' : '216,168,72';
+      g.addColorStop(0, `rgba(${warm},0.16)`);
+      g.addColorStop(1, `rgba(${warm},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(
+        e.body.x - light.radius, e.body.y - light.radius,
+        light.radius * 2, light.radius * 2,
+      );
     }
 
     // 先画地面上的扇形，再画实体 —— 判定框不该盖住人
@@ -582,6 +666,13 @@ export function startRtPrototype(root: HTMLElement): () => void {
   }
 
   const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
+  /**
+   * 理智归零后的地图配色。
+   *
+   * 【同一批瓦片，另一套调色板】—— 见 tools/gen-assets.mjs。
+   * 所以"归零换风格"不用画两套图，多加载两份 PNG 就够了。
+   */
+  const tilesZero: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
 
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
@@ -630,6 +721,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
     fpsTimer += realDt;
     if (fpsTimer >= 0.5) {
       fps = Math.round(frames / fpsTimer);
+      const sanPct = Math.round((state.san / state.sanMax) * 100);
+      const sanColor = isZeroState(state.san)
+        ? '#e05a3a'
+        : state.san < 40
+          ? '#c98a3a'
+          : '#5a8ac4';
       frames = 0;
       fpsTimer = 0;
       const p = findPlayer(state);
@@ -644,6 +741,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
         .join(' ');
       stat.innerHTML =
         `<b>${fps}</b> fps &nbsp; tick <b>${state.tick}</b>` +
+        ` &nbsp; 理智 <b style="color:${sanColor}">${Math.round(state.san)}</b>/${state.sanMax}` +
+        `<span style="display:inline-block;width:64px;height:5px;background:#22222b;vertical-align:middle;margin-left:4px">` +
+        `<span style="display:block;height:5px;width:${sanPct}%;background:${sanColor}"></span></span>` +
+        (p !== undefined && p.light !== undefined
+          ? ` &nbsp; 烛 <b>${Math.ceil(p.light.fuel / 60)}</b>s`
+          : ` &nbsp; 烛 <b>—</b>`) +
         ` &nbsp; 房 <b>${plan.cols}×${plan.rows}@${plan.scale}</b>` +
         ` &nbsp; 视口 <b>${window.innerWidth}×${window.innerHeight}</b>` +
         (p !== undefined
@@ -659,9 +762,16 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const onResize = (): void => fitCanvas();
   window.addEventListener('resize', onResize);
 
-  void Promise.all([loadImage('map/floor.png'), loadImage('map/wall.png')]).then(([f, w]) => {
+  void Promise.all([
+    loadImage('map/floor.png'),
+    loadImage('map/wall.png'),
+    loadImage('map/zero/floor.png'),
+    loadImage('map/zero/wall.png'),
+  ]).then(([f, w, zf, zw]) => {
     tiles.floor = f;
     tiles.wall = w;
+    tilesZero.floor = zf;
+    tilesZero.wall = zw;
   });
 
   fitCanvas();

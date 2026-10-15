@@ -12,7 +12,16 @@
  */
 
 import { emptyAction } from './types.js';
-import type { ActionDef, AiState, Body, Entity, EntityKind, RtState, Vec2 } from './types.js';
+import type {
+  ActionDef,
+  AiState,
+  Body,
+  Entity,
+  EntityKind,
+  LightSource,
+  RtState,
+  Vec2,
+} from './types.js';
 
 export interface SpawnOptions {
   kind: EntityKind;
@@ -27,6 +36,10 @@ export interface SpawnOptions {
   attack?: ActionDef;
   /** 有 ai 的就是会被驱动着追人的 */
   ai?: AiState;
+  /** 发光体（壁灯、蜡烛） */
+  light?: LightSource;
+  /** 待在它旁边每秒扣多少理智 */
+  sanDrain?: number;
 }
 
 /** 造一个实体。id 从 state.nextUid 取 —— 不用全局计数器，否则回放会串号 */
@@ -52,6 +65,8 @@ export function spawn(state: RtState, opts: SpawnOptions): Entity {
     action: emptyAction(),
     ai: opts.ai,
     attack: opts.attack,
+    light: opts.light,
+    sanDrain: opts.sanDrain,
   };
   state.nextUid++;
   state.entities.push(entity);

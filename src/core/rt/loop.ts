@@ -30,9 +30,12 @@
 import { actionDash, advanceAction, applyHits, beginAction, canAct, collectHits } from './action.js';
 import { updateAi } from './ai.js';
 import { spawn, sweep } from './entities.js';
+import { burnFuel } from './light.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
-import { NEUTRAL_INPUT, TILE } from './types.js';
-import type { Entity, InputState, RtState } from './types.js';
+import { pick } from './rng.js';
+import { SANITY_MAX, findSpawnSpot, rollSpawn, tickSanity } from './sanity.js';
+import { DEFAULT_SPAWN, NEUTRAL_INPUT, TILE, makeAiState } from './types.js';
+import type { Entity, InputState, RtState, SpawnTemplate } from './types.js';
 
 /** 模拟频率。所有帧数、计时都以它为单位（见 docs/06 第六节） */
 export const TICK_RATE = 60;
@@ -94,10 +97,17 @@ export interface RtInitOptions {
   /** 玩家出生点（像素） */
   spawnX?: number;
   spawnY?: number;
+  san?: number;
+  sanMax?: number;
+  /** 每多少 tick 自然掉 1 点理智。0 = 不掉 */
+  sanDrainEvery?: number;
+  /** 能刷哪些怪。空 = 不刷 */
+  spawnTable?: SpawnTemplate[];
 }
 
 export function createInitialRtState(opts: RtInitOptions): RtState {
   const map = opts.map ?? makeTestRoom();
+  const sanMax = opts.sanMax ?? SANITY_MAX;
   const state: RtState = {
     tick: 0,
     rngState: opts.seed >>> 0,
@@ -105,6 +115,17 @@ export function createInitialRtState(opts: RtInitOptions): RtState {
     entities: [],
     map,
     nextUid: 0,
+
+    san: opts.san ?? sanMax,
+    sanMax,
+    // 默认 12 秒掉 1 点 —— 慢到平时感觉不到，但拖久了会有代价
+    sanDrainEvery: opts.sanDrainEvery ?? 720,
+    sanDrainAcc: 0,
+
+    spawnTimer: 180,
+    spawnedTotal: 0,
+    spawnTable: opts.spawnTable ?? [],
+    spawnConfig: DEFAULT_SPAWN,
   };
 
   // 玩家出生在 2.5 格处 —— 贴着墙角出生的话第一帧就会被判定为穿墙
@@ -148,11 +169,23 @@ export function cloneRtState(state: RtState): RtState {
         //    原件也会记成"这一招已经打到过了"。
         hasHit: new Set(e.action.hasHit),
       },
-      // ai 是纯数据，浅拷够用；attack 是不可变的定义，直接共享
+      // ai 是纯数据，浅拷够用；attack / light 是不可变或小而独立的结构
       ai: e.ai === undefined ? undefined : { ...e.ai },
       attack: e.attack,
+      light: e.light === undefined ? undefined : { ...e.light },
+      sanDrain: e.sanDrain,
     })),
     nextUid: state.nextUid,
+
+    san: state.san,
+    sanMax: state.sanMax,
+    sanDrainEvery: state.sanDrainEvery,
+    sanDrainAcc: state.sanDrainAcc,
+    spawnTimer: state.spawnTimer,
+    spawnedTotal: state.spawnedTotal,
+    // 刷怪表是只读配置，直接共享；写它等于改配置，不该发生
+    spawnTable: state.spawnTable,
+    spawnConfig: state.spawnConfig,
   };
 }
 
@@ -250,7 +283,46 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
     }
   }
 
-  // ⑤ 清理
+  // ⑤ 光：烧燃料。烧完的蜡烛要发事件，表现层好放个"熄了"的反馈
+  for (const burnt of burnFuel(state)) {
+    events.push({ type: 'lightOut', id: burnt.id, x: burnt.body.x, y: burnt.body.y });
+  }
+
+  // ⑥ 理智。归零 / 复原都要发事件 —— 地图配色切换挂在这上面
+  const san = tickSanity(state);
+  if (san !== null) {
+    if (san.justZeroed) events.push({ type: 'sanityZero', san: san.after });
+    if (san.justRecovered) events.push({ type: 'sanityRecovered', san: san.after });
+  }
+
+  // ⑦ 实时刷怪。理智越低刷得越多（见 sanity.ts 的 spawnMultiplier）
+  if (state.spawnTable.length > 0) {
+    const aliveFoes = state.entities.filter((e) => e.kind === 'enemy' && e.alive).length;
+    const decision = rollSpawn(state, aliveFoes);
+    state.spawnTimer = decision.nextTimer;
+    if (decision.spawn) {
+      const spot = findSpawnSpot(state);
+      const tpl = pick(state, state.spawnTable);
+      if (spot !== null && tpl !== undefined) {
+        spawn(state, {
+          kind: 'enemy',
+          x: spot.x,
+          y: spot.y,
+          hp: tpl.hp,
+          speed: tpl.speed,
+          hw: tpl.hw,
+          hh: tpl.hh,
+          attack: tpl.attack,
+          ai: makeAiState(tpl.ai),
+          sanDrain: tpl.sanDrain,
+        });
+        state.spawnedTotal++;
+        events.push({ type: 'spawn', x: spot.x, y: spot.y, san: state.san });
+      }
+    }
+  }
+
+  // ⑧ 清理
   const removed = sweep(state);
   if (removed > 0) events.push({ type: 'sweep', removed });
 

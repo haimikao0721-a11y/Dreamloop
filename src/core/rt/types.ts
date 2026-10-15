@@ -146,8 +146,34 @@ export interface Entity {
   ai?: AiState;
   /** 这个实体能出什么招 */
   attack?: ActionDef;
-  /** 起手/判定/收招期间不能移动 —— 这就是"能躲"和"打空要付代价"的实现 */
-  readonly immobileWhileActing?: boolean;
+  /** 这个实体发光。壁灯、蜡烛都是 */
+  light?: LightSource;
+  /** 待在它旁边每秒扣多少理智。只有敌人有 */
+  sanDrain?: number;
+}
+
+/* ── 光 ── */
+
+/**
+ * 一个光源。
+ *
+ * 【为什么恢复速率是"每秒"而燃料是 tick】
+ * 速率是给策划看的（+2/秒），燃料是给模拟用的（精确到帧）。
+ * 混用单位是数值表最容易出错的地方，所以刻意分开写清楚。
+ */
+export interface LightSource {
+  /** 照亮半径，像素 */
+  radius: number;
+  /** 站在里面每秒恢复多少理智 */
+  rate: number;
+  /** 剩余燃料，单位 tick。-1 = 无限（壁灯这类固定光源） */
+  fuel: number;
+  /** 插在地上会烧得更快 —— 回得多，但留不住 */
+  readonly planted?: boolean;
+}
+
+export function makeLight(radius: number, rate: number, fuel = -1): LightSource {
+  return { radius, rate, fuel };
 }
 
 export function emptyAction(): ActionState {
@@ -198,6 +224,45 @@ export interface TileMap {
 
 export type RtPhase = 'playing' | 'story' | 'dead';
 
+/* ── 刷怪 ── */
+
+/**
+ * 一个可刷的敌人模板。
+ *
+ * 【core 不认识"爬行物"是什么】—— 它只知道"有这么个东西，长这样、
+ * 这么难打"。具体是谁、画成什么样，是数据层的事。
+ * 这条边界守住了，加 100 个怪不用改一行引擎代码。
+ */
+export interface SpawnTemplate {
+  readonly hp: number;
+  readonly speed: number;
+  readonly hw: number;
+  readonly hh: number;
+  readonly attack: ActionDef;
+  readonly sanDrain: number;
+  readonly ai: {
+    readonly cooldownMax: number;
+    readonly detectRange: number;
+    readonly attackRange: number;
+    readonly stopDistance: number;
+  };
+}
+
+export interface SpawnConfig {
+  /** 基准：理智满时平均多少 tick 刷一只 */
+  readonly baseInterval: number;
+  /** 场上同时最多几只 */
+  readonly maxAlive: number;
+  /** 离玩家多近之内不许刷 —— 不能凭空出现在脸上 */
+  readonly minDistance: number;
+}
+
+export const DEFAULT_SPAWN: SpawnConfig = {
+  baseInterval: 480, // 满理智时约 8 秒一只
+  maxAlive: 12,
+  minDistance: 80, // 至少 5 格
+};
+
 export interface RtState {
   /** 已经推进了多少 tick。所有计时的唯一时间源 */
   tick: number;
@@ -207,6 +272,32 @@ export interface RtState {
   map: TileMap;
   /** 实体 id 发号器。存进 state 而不是全局计数器 —— 否则回放会串号 */
   nextUid: number;
+
+  /* ── 理智（见 docs/06 第九节） ── */
+
+  /**
+   * 核心资源。既是"命"也是"货币"。
+   *
+   * 【归零不是死亡】—— 世界换一层皮：怪物刷到最多、地图换配色。
+   * 而且【可逆】：回到光里把理智拉回 1 以上，世界就切回来。
+   * 不可逆的话归零就等于"这局完了"，玩家会直接重开。
+   */
+  san: number;
+  sanMax: number;
+  /** 自然流失：每多少 tick 掉 1 点 */
+  sanDrainEvery: number;
+  /** 离上一次自然流失过了多少 tick */
+  sanDrainAcc: number;
+
+  /* ── 刷怪 ── */
+
+  /** 距离下一次尝试刷怪还有多少 tick */
+  spawnTimer: number;
+  /** 这一局已经刷了多少（调试 / 平衡用） */
+  spawnedTotal: number;
+  /** 从这里面挑着刷。空数组 = 不刷怪 */
+  spawnTable: SpawnTemplate[];
+  spawnConfig: SpawnConfig;
 }
 
 /* ── 工具 ── */
