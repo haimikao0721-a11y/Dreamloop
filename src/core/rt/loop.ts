@@ -34,8 +34,9 @@ import { burnFuel } from './light.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
 import { pick } from './rng.js';
 import { SANITY_MAX, findSpawnSpot, rollSpawn, tickSanity } from './sanity.js';
+import { descend } from './progress.js';
 import { endRun, triggerRoomStory, tryPickup, updateClearCounter } from './story.js';
-import { DEFAULT_SPAWN, NEUTRAL_INPUT, TILE, makeAiState } from './types.js';
+import { BASE_ATK, BASE_DEF, DEFAULT_SPAWN, NEUTRAL_INPUT, TILE, makeAiState } from './types.js';
 import type { GameEvent } from '../types.js';
 import type { Entity, Flags, InputState, RtState, SpawnTemplate } from './types.js';
 
@@ -148,8 +149,8 @@ export function createInitialRtState(opts: RtInitOptions): RtState {
     // 【默认 0，不是 5】—— atk 是【加成】、def 是【减伤】，
     // 基础伤害在 ActionDef.damage 里。默认给非 0 的话，
     // 伤害会凭空高出一截，而动作表里的数字就不再是"打多少"了
-    atk: opts.atk ?? 0,
-    def: opts.def ?? 0,
+    atk: opts.atk ?? BASE_ATK,
+    def: opts.def ?? BASE_DEF,
     inventory: [],
     nextItemUid: 0,
     seenStories: [],
@@ -310,7 +311,18 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
       // 交互键：捡脚下的东西。捡到叙事物件会直接开剧情，
       // 而 openStory 会把 phase 改成 'story' —— 下一帧世界就冻住了
       if (input.use) {
-        tryPickup(state, events);
+        /*
+         * 交互键的优先级：捡东西 → 下楼。
+         *
+         * 【下楼必须是主动动作，不能踩上去就掉下去】——
+         * 楼梯在房间清空之前不生效，所以误触的后果是"什么都没发生"，
+         * 玩家会以为坏了。给一个按键，意图就明确了。
+         *
+         * 插蜡烛不在这里 —— 那是 UI 层的兜底（脚下没东西可交互时才插）。
+         */
+        if (!tryPickup(state, events)) {
+          descend(state, events);
+        }
       }
     } else if (entity.ai !== undefined && player !== undefined) {
       updateAi(entity, player);

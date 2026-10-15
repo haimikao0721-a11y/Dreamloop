@@ -24,7 +24,7 @@ import {
   totalFrames,
 } from '../src/core/rt/action.js';
 import { makeAiState } from '../src/core/rt/types.js';
-import { isSolid, spawn, updateAi } from '../src/core/rt/index.js';
+import { BASE_ATK, BASE_DEF, isSolid, spawn, updateAi } from '../src/core/rt/index.js';
 import {
   TILE,
   createInitialRtState,
@@ -584,12 +584,36 @@ describe('攻防进伤害公式', () => {
     return collectHits(foe, [a], { atk: 0, def })[0]?.damage ?? 0;
   }
 
-  it('atk 加成会打进伤害', () => {
-    expect(playerHits(5)).toBe(SWING.damage + 5);
+  /*
+   * 【基准语义】atk / def 传的是【角色表里的绝对值】，公式里减掉基准。
+   *
+   *   基准 atk = 5（记梦者）、基准 def = 1
+   *   atk 5 → +0     atk 6 → +1     （护士比记梦者多 1 点伤害）
+   *   def 1 → -0     def 2 → -1     （护士比记梦者少挨 1 点）
+   *
+   * 这样角色表不用改，动作表也不用重调。直接相加的话
+   * 记梦者打一下凭空多 5 点，整张动作表就废了。
+   */
+
+  it('基准 atk 不加成 —— 动作表里的数字就是打出来的数字', () => {
+    expect(playerHits(BASE_ATK)).toBe(SWING.damage);
   });
 
-  it('def 会减伤（玩家挨打时）', () => {
-    expect(foeHits(2)).toBe(SWING.damage - 2);
+  it('高出基准的 atk 会打进伤害', () => {
+    expect(playerHits(BASE_ATK + 1)).toBe(SWING.damage + 1);
+    expect(playerHits(BASE_ATK + 3)).toBe(SWING.damage + 3);
+  });
+
+  it('低于基准的 atk 会减伤害', () => {
+    expect(playerHits(BASE_ATK - 1)).toBe(SWING.damage - 1);
+  });
+
+  it('基准 def 不减伤', () => {
+    expect(foeHits(BASE_DEF)).toBe(SWING.damage);
+  });
+
+  it('高出基准的 def 会减伤（玩家挨打时）', () => {
+    expect(foeHits(BASE_DEF + 2)).toBe(SWING.damage - 2);
   });
 
   it('减到 0 以下也至少 1 点 —— 打不动也要有反馈', () => {

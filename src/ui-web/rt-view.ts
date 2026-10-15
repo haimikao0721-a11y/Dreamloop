@@ -30,10 +30,20 @@ import {
   tickRt,
   totalFrames,
 } from '@core/rt/index.js';
+import { TILE_STAIRS } from '@core/rt/types.js';
+import { SANITY_MAX, BASE_ATK, BASE_DEF } from '@core/rt/index.js';
 import type { ActionState, Entity, InputState, RtState } from '@core/rt/index.js';
 import { getCurrentStory, getVisibleChoiceIndices } from '@core/narrative';
-import { chooseInStory, narrativeView, plantCandle, tryPickup } from '@core/rt/index.js';
+import {
+  chooseInStory,
+  narrativeView,
+  plantCandle,
+  roomCleared,
+  tryPickup,
+} from '@core/rt/index.js';
 import { ARCHIVIST_HEAVY, ARCHIVIST_LIGHT } from '@data/rt/actions.js';
+import { findItem, findRole } from '@core/content';
+import { generateRoom } from '@core/rt/dungeon.js';
 import { CRAWLER, ORDERLY } from '@data/rt/enemies.js';
 import { toSpawnTemplate } from '@data/rt/enemies.js';
 import type { RtEnemyDef } from '@data/rt/enemies.js';
@@ -454,12 +464,35 @@ function createInputRig(
 
 /* ── 主入口 ── */
 
+/**
+ * 一个最小的确定性随机源，只给房间生成用。
+ *
+ * 【为什么不直接用 state 上的 nextFloat】—— 生成发生在
+ * createInitialRtState【之前】，那时还没有 state。
+ * 和 core 用同一套 mulberry32，保证同一个 seed 生成同一张图。
+ */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** 实体 id → 精灵集。放在模块级是为了让 pickFrame 不用透传参数 */
 const sprites = new Map<string, SpriteSet>();
 /** 实体 id → 敌人定义 id，调试输出用 */
 const names = new Map<string, string>();
 
-export function startRtPrototype(root: HTMLElement): () => void {
+/** 开局参数。主线的选人界面传进来；?proto=rt 直接开就用默认角色 */
+export interface RtStartOptions {
+  readonly roleId?: string;
+}
+
+export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): () => void {
   const style = document.createElement('style');
   style.textContent = CSS;
 
@@ -487,7 +520,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
   hintBar.textContent =
-    '第 4 步：打完等 1.5 秒会掉金色光点，走过去按 E 捡。调参：?drain= ?candle= ?spawn= ?san= ?seed=';
+    '清空房间 → 掉金色光点（E 捡）→ 楼梯亮起来 → 站上去按 E 下一层。调参：?drain= ?candle= ?spawn= ?san= ?seed=';
 
   const wheel = document.createElement('div');
   wheel.className = 'rt-wheel';
@@ -573,13 +606,60 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const candleRate = num('candle', 1);
   const spawnInterval = num('spawn', 480);
 
+  const seedValue = Number.isFinite(seedParam) && seedParam !== 0 ? seedParam : 20261015;
+
+  /*
+   * 【角色数据是内容层定的，不是实时层写死的】
+   *
+   * 记梦者 hp22 / san30 / atk5 / def1，护士 hp26 / san18 / atk6 / def2。
+   * 实时层只负责把它们用在正确的地方：
+   *
+   *   san     理智【上限】—— 回合制那边就是 sanMax: role.san，
+   *           所以 18 和 30 是真实差异：护士的池子更浅，
+   *           同样掉 6 点她掉的比例更大，更容易掉进"怪变多"的档
+   *   atk/def 传【绝对值】，伤害公式里减掉基准（见 types.ts 的 BASE_ATK）。
+   *           直接相加的话记梦者打一下凭空多 5 点，动作表就废了
+   *   tags    剧情选项的门控，必须有 —— 不然 healer 专属选项选不出来
+   */
+  // ?role= 让调试时能直接开某个角色，不用点穿选人界面
+  const roleParam = qs.get('role');
+  const role =
+    opts.roleId !== undefined
+      ? findRole(opts.roleId)
+      : roleParam !== null
+        ? findRole(roleParam)
+        : undefined;
+
   const state: RtState = createInitialRtState({
-    seed: Number.isFinite(seedParam) && seedParam !== 0 ? seedParam : 20261015,
-    map: makeTestRoom(plan.cols, plan.rows),
+    seed: seedValue,
+    roleId: role?.id ?? 'dream_archivist',
+    roleTags: role?.tags ?? [],
+    sanMax: role?.san ?? SANITY_MAX,
+    atk: role?.atk ?? BASE_ATK,
+    def: role?.def ?? BASE_DEF,
+    /*
+     * 【用真生成，不用测试盒子】—— makeTestRoom 是给测试用的空房间，
+     * 只有一个门洞。玩家看到的第一层如果是个空盒子，
+     * "清房间 → 掉剧情 → 下楼"这条链路的体验就立不住。
+     */
+    map: generateRoom({
+      cols: plan.cols,
+      rows: plan.rows,
+      rand: mulberry32(seedValue),
+      depth: 1,
+    }).map,
     sanDrainEvery: drainEvery,
-    ...(Number.isFinite(sanParam) && qs.has('san') ? { san: sanParam } : {}),
   });
   state.spawnConfig = { ...state.spawnConfig, baseInterval: spawnInterval };
+  /*
+   * ?san= 是【百分比】0~100。
+   *
+   * 理智上限现在跟着角色走（记梦者 30、护士 18），写绝对值的话
+   * 同一个数字在两个人身上含义完全不同，调参根本没法比。
+   */
+  state.san = qs.has('san')
+    ? Math.max(0, Math.min(1, (Number.isFinite(sanParam) ? sanParam : 100) / 100)) * state.sanMax
+    : state.sanMax;
   /*
    * 【实时刷怪的表必须传进去】—— createInitialRtState 的 spawnTable
    * 默认是空数组，不传的话"理智越低刷得越多"这条机制在原型里
@@ -590,6 +670,22 @@ export function startRtPrototype(root: HTMLElement): () => void {
   state.san = Number.isFinite(sanParam) && qs.has('san') ? sanParam : state.sanMax;
 
   const player = findPlayer(state);
+
+  /*
+   * 起始物品进背包。
+   * 【不是为了效果】—— 效果是叙事层的事。这里是为了让
+   * requires: [{ kind: 'hasItem', defId: ... }] 这类条件能被满足。
+   * 不进背包的话，那个角色的专属剧情永远触发不了。
+   */
+  for (const defId of role?.startItems ?? []) {
+    const def = findItem(defId);
+    state.inventory.push({
+      uid: `i${state.nextItemUid}`,
+      defId,
+      kind: def?.kind ?? 'consumable',
+    });
+    state.nextItemUid++;
+  }
   if (player !== undefined) {
     player.attack = ARCHIVIST_LIGHT;
     player.heavyAttack = ARCHIVIST_HEAVY;
@@ -835,6 +931,8 @@ export function startRtPrototype(root: HTMLElement): () => void {
     // 理智归零 → 整张地图换配色。玩家不用看数字就知道自己掉进去了
     const zero = isZeroState(state.san);
     const skin = zero ? tilesZero : tiles;
+    // 房间清空了没 —— 楼梯亮不亮看它
+    const clear = roomCleared(state);
 
     /*
      * 先铺底，再把整个坐标系下移 WALL_TOP_H。
@@ -878,6 +976,18 @@ export function startRtPrototype(root: HTMLElement): () => void {
     for (let ty = 0; ty < map.h; ty++) {
       for (let tx = 0; tx < map.w; tx++) {
         if (isSolidAt(tx, ty)) continue;
+        const isStairs = map.tiles[ty * map.w + tx] === TILE_STAIRS;
+
+        if (isStairs && usable(skin.stairs)) {
+          /*
+           * 楼梯。清空之前画【暗的】—— 这是个可操作性的提示：
+           * 玩家一眼就知道"还不能下去"，而不用去撞一次墙才明白。
+           */
+          ctx.globalAlpha = clear ? 1 : 0.35;
+          ctx.drawImage(skin.stairs, tx * TILE, ty * TILE, TILE, TILE);
+          ctx.globalAlpha = 1;
+          continue;
+        }
         if (usable(skin.floor)) {
           ctx.drawImage(skin.floor, tx * TILE, ty * TILE, TILE, TILE);
         } else {
@@ -1024,7 +1134,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
     }
   }
 
-  const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement; wallTop?: HTMLImageElement } = {};
+  const tiles: {
+    floor?: HTMLImageElement;
+    wall?: HTMLImageElement;
+    wallTop?: HTMLImageElement;
+    stairs?: HTMLImageElement;
+  } = {};
   /** 光源的素材：壁灯（拿不走）和蜡烛（地上的）。实体没精灵，单独管 */
   const lightArt: { lamp?: HTMLImageElement; candle?: HTMLImageElement } = {};
   /**
@@ -1033,7 +1148,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
    * 【同一批瓦片，另一套调色板】—— 见 tools/gen-assets.mjs。
    * 所以"归零换风格"不用画两套图，多加载两份 PNG 就够了。
    */
-  const tilesZero: { floor?: HTMLImageElement; wall?: HTMLImageElement; wallTop?: HTMLImageElement } = {};
+  const tilesZero: {
+    floor?: HTMLImageElement;
+    wall?: HTMLImageElement;
+    wallTop?: HTMLImageElement;
+    stairs?: HTMLImageElement;
+  } = {};
 
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
@@ -1112,6 +1232,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
         (p !== undefined && p.light !== undefined
           ? ` &nbsp; 烛 <b>${Math.ceil(p.light.fuel / 60)}</b>s`
           : ` &nbsp; 烛 <b>—</b>`) +
+        ` &nbsp; 第 <b>${state.depth}</b> 层` +
         ` &nbsp; 房 <b>${plan.cols}×${plan.rows}@${plan.scale}</b>` +
         ` &nbsp; 视口 <b>${window.innerWidth}×${window.innerHeight}</b>` +
         (p !== undefined
@@ -1131,16 +1252,20 @@ export function startRtPrototype(root: HTMLElement): () => void {
     loadImage('map/floor.png'),
     loadImage('map/wall.png'),
     loadImage('map/wall_top.png'),
+    loadImage('map/stairs.png'),
     loadImage('map/zero/floor.png'),
     loadImage('map/zero/wall.png'),
     loadImage('map/zero/wall_top.png'),
-  ]).then(([f, w, wt, zf, zw, zwt]) => {
+    loadImage('map/zero/stairs.png'),
+  ]).then(([f, w, wt, st, zf, zw, zwt, zst]) => {
     tiles.floor = f;
     tiles.wall = w;
     tiles.wallTop = wt;
+    tiles.stairs = st;
     tilesZero.floor = zf;
     tilesZero.wall = zw;
     tilesZero.wallTop = zwt;
+    tilesZero.stairs = zst;
   });
   void Promise.all([loadImage('map/wall_lamp.png'), loadImage('map/candle.png')]).then(
     ([lamp, candle]) => {

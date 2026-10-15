@@ -12,6 +12,7 @@
  * ════════════════════════════════════════════════════════════════
  */
 
+import { BASE_ATK, BASE_DEF } from './types.js';
 import type { ActionDef, ActionState, Body, Entity, Vec2 } from './types.js';
 
 export type ActionPhase = 'idle' | 'startup' | 'active' | 'recovery';
@@ -129,8 +130,18 @@ export function collectHits(
    * 不接进伤害公式的话，那些 buff 就是假的 ——
    * 玩家吃了"攻击 +2"，打出来还是同一个数字。
    *
-   * 语义：atk 是【加成】（基础 0），def 是【减伤】（基础 0）。
-   * 动作本身的伤害在 ActionDef.damage 里，两者相加。
+   * ── 语义：相对【基准角色】的偏移量 ──
+   *
+   * 动作伤害表（src/data/rt/actions.ts）是按"基准角色"调的，
+   * 而角色表里的 atk/def 是 5/1 这种【绝对值】。
+   *
+   * 直接相加的话，记梦者打一下会多出 5 点伤害 —— 整张表废掉。
+   * 所以公式里减掉基准，只取【偏移】：
+   *
+   *     atk 5 → +0（基准）      atk 6 → +1
+   *     def 1 → -0（基准）      def 2 → -1
+   *
+   * 这样角色表不用改，动作表也不用重调，而两个角色的差异还在。
    */
   playerStats?: { atk: number; def: number },
 ): HitResult[] {
@@ -154,8 +165,10 @@ export function collectHits(
     const ky = target.body.y - actor.body.y;
     const klen = Math.hypot(kx, ky) || 1;
 
-    const atk = actor.kind === 'player' ? playerStats?.atk ?? 0 : 0;
-    const armor = target.kind === 'player' ? playerStats?.def ?? 0 : 0;
+    const atk =
+      actor.kind === 'player' ? (playerStats?.atk ?? BASE_ATK) - BASE_ATK : 0;
+    const armor =
+      target.kind === 'player' ? (playerStats?.def ?? BASE_DEF) - BASE_DEF : 0;
     // 至少 1 点 —— 打不动也要有反馈，否则玩家以为没打中
     const damage = Math.max(1, def.damage + atk - armor);
 

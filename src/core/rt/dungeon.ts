@@ -66,7 +66,17 @@ function floodFrom(map: TileMap, sx: number, sy: number): Uint8Array {
       if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h) continue;
       const ni = ny * map.w + nx;
       if (seen[ni] === 1) continue;
-      if (map.tiles[ni] !== TILE_FLOOR) continue;
+      /*
+       * 【楼梯也要能走】—— 只认 TILE_FLOOR 的话，楼梯格会被当成障碍，
+       * 于是"有楼梯的那张图永远判不连通"。
+       *
+       * 表现很隐蔽：generateRoom 会重试 40 次全部失败，
+       * 然后静悄悄退回空房间。看起来像"生成器太保守"，
+       * 而不是"连通性检查本身是错的"。
+       *
+       * 判据统一成"不是墙"，和碰撞那边的 isSolid 对齐。
+       */
+      if (map.tiles[ni] === TILE_WALL) continue;
       seen[ni] = 1;
       stack.push(ni);
     }

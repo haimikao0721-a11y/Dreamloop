@@ -17,6 +17,8 @@ export * from './light.js';
 export * from './sanity.js';
 export * from './action.js';
 export * from './ai.js';
+export * from './dungeon.js';
+export * from './progress.js';
 export * from './narrative-bridge.js';
 export * from './story.js';
 export * from './loop.js';

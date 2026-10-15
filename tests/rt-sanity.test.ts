@@ -74,33 +74,53 @@ function fresh(extra: Partial<Parameters<typeof createInitialRtState>[0]> = {}):
    ═══════════════════════════════════════════════════════════════ */
 
 describe('刷怪系数', () => {
+  /*
+   * 【按比例分档，不按绝对值】
+   *
+   * 回合制那边 sanMax 是【角色自己的 san】（记梦者 30、护士 18）。
+   * 用绝对值分档的话理智永远到不了 70，全程卡最低档 ——
+   * "理智越低怪越多"等于没做。
+   */
+  const MAX = 30;
+
   it('理智越低系数越高，且单调不降', () => {
     // 【不变量】san 增大时系数【不能增大】—— 理智越高刷得越少。
     // 所以按 san 升序遍历，系数必须单调不增。
     //
     // 这个方向我写反过两次。想清楚再写：
-    //   san=0 → 3.0（刷最多）    san=100 → 1.0（刷最少）
+    //   san=0 → 3.0（刷最多）    san=max → 1.0（刷最少）
     // 升序遍历看到的序列是 3.0, 2.5, 2.0, 1.5, 1.0 —— 一路下降。
     let prev = Infinity;
-    for (let san = 0; san <= 100; san += 1) {
-      const m = spawnMultiplier(san);
+    for (let san = 0; san <= MAX; san += 1) {
+      const m = spawnMultiplier(san, MAX);
       expect(m, `理智 ${san} 的系数比更低理智时还大 —— 关系反了`).toBeLessThanOrEqual(prev);
       prev = m;
     }
-    expect(spawnMultiplier(0)).toBeGreaterThan(spawnMultiplier(100));
+    expect(spawnMultiplier(0, MAX)).toBeGreaterThan(spawnMultiplier(MAX, MAX));
   });
 
   it('满理智是 1.0，归零是 3.0', () => {
-    expect(spawnMultiplier(100)).toBe(1.0);
-    expect(spawnMultiplier(0)).toBe(3.0);
+    expect(spawnMultiplier(MAX, MAX)).toBe(1.0);
+    expect(spawnMultiplier(0, MAX)).toBe(3.0);
   });
 
-  it('档位和 docs/06 第九节的表对得上', () => {
-    expect(spawnMultiplier(80)).toBe(1.0);
-    expect(spawnMultiplier(50)).toBe(1.5);
-    expect(spawnMultiplier(20)).toBe(2.0);
-    expect(spawnMultiplier(5)).toBe(2.5);
-    expect(spawnMultiplier(0)).toBe(3.0);
+  it('档位边界按比例走', () => {
+    expect(spawnMultiplier(MAX, MAX)).toBe(1.0);
+    expect(spawnMultiplier(MAX * 0.5, MAX)).toBe(1.5);
+    expect(spawnMultiplier(MAX * 0.2, MAX)).toBe(2.0);
+    expect(spawnMultiplier(MAX * 0.05, MAX)).toBe(2.5);
+    expect(spawnMultiplier(0, MAX)).toBe(3.0);
+  });
+
+  it('【关键】同一个比例、不同的上限，档位一样', () => {
+    // 这就是改成比例的意义：18 和 30 两个角色用同一套阈值
+    for (const frac of [0.9, 0.5, 0.2, 0.05]) {
+      expect(spawnMultiplier(frac * 30, 30)).toBe(spawnMultiplier(frac * 18, 18));
+    }
+  });
+
+  it('上限为 0 时不炸，退回最松的档', () => {
+    expect(spawnMultiplier(0, 0)).toBe(1.0);
   });
 
   it('归零判定用 <= 0，负数是防御性的', () => {

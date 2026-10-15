@@ -33,11 +33,25 @@ export const SANITY_MAX = 100;
  * 但 70 和 69 的实际难度差一档 —— 这是有意的，
  * 让"理智在掉"这件事【一直在被感知】。
  */
-export function spawnMultiplier(san: number): number {
-  if (san <= 0) return 3.0;
-  if (san < 10) return 2.5;
-  if (san < 40) return 2.0;
-  if (san < 70) return 1.5;
+export function spawnMultiplier(san: number, sanMax: number): number {
+  /*
+   * 【按比例分档，不按绝对值】
+   *
+   * 第一版写的是绝对值（< 70 / < 40 / < 10），因为默认上限是 100。
+   * 但回合制那边 sanMax 是【角色自己的 san】——
+   * 记梦者 30、值夜护士 18。用绝对值的话理智永远到不了 70，
+   * 全程卡在最低档，"理智越低怪越多"这条机制等于没有。
+   *
+   * 换成比例之后，角色表里的 18 和 30 才真的有意义：
+   * 护士的理智池更浅，同样掉 6 点，她掉的比例更大 —— 更容易掉进低档。
+   * 这是"frail vs steadfast"在实时层里的延续。
+   */
+  if (sanMax <= 0) return 1.0;
+  const r = san / sanMax;
+  if (r <= 0) return 3.0;
+  if (r < 0.1) return 2.5;
+  if (r < 0.4) return 2.0;
+  if (r < 0.7) return 1.5;
   return 1.0;
 }
 
@@ -151,7 +165,7 @@ export function rollSpawn(
   state.spawnTimer--;
   if (state.spawnTimer > 0) return { spawn: false, nextTimer: state.spawnTimer };
 
-  const mult = spawnMultiplier(state.san);
+  const mult = spawnMultiplier(state.san, state.sanMax);
   // 系数越大，间隔越短
   const interval = Math.max(30, Math.round(cfg.baseInterval / mult));
   // ±40% 抖动，别让节奏可预测

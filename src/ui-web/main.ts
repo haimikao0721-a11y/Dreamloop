@@ -206,9 +206,23 @@ function boot(): void {
   //   · 只有一份构建产物、一个部署地址
   //   · 正式游戏一行都不用动，两者完全并存
   //   · 手机上分享"试试这个原型"就是一个链接
-  if (new URLSearchParams(location.search).get('proto') === 'rt') {
+  /*
+   * 【入口现在是主菜单，主线剧情 = 实时版】
+   *
+   * 实时版替换掉回合制成为主线之后，?proto=rt 这个"原型快捷方式"
+   * 就只剩开发时直接跳进去的用途了。
+   *
+   * ?proto=turn 反过来 —— 它进【旧的回合制版本】。
+   * 那个版本还完整可用，留着作为对照和退路：
+   * 实时版出问题的时候，至少还有一个能玩的版本。
+   */
+  const proto = new URLSearchParams(location.search).get('proto');
+  if (proto === 'rt') {
     bootRtPrototype();
     return;
+  }
+  if (proto === 'turn') {
+    // 什么都不做，往下走就是回合制
   }
 
   if (actId === '') {
@@ -275,7 +289,9 @@ function showMainMenu(): void {
       desc: '三点十七分的夜班。三层楼，十段记录，三种死法。',
       onPick: () => {
         ui.hideMenu();
-        ui.showRoleSelect(roles, (roleId) => startRun(roleId));
+        // 【主线现在是实时版】—— 选完人直接进实时层。
+        // 旧的回合制版本在 ?proto=turn 还留着，作为对照和退路。
+        ui.showRoleSelect(roles, (roleId) => bootRtPrototype(roleId));
       },
     },
     {
@@ -354,11 +370,20 @@ function restartRun(): void {
  * 所以这里只能把它藏起来，而不是不建。藏起来比大改初始化顺序安全 ——
  * 原型是临时产物，不该为了它动正式游戏的启动路径。
  */
-function bootRtPrototype(): void {
+/**
+ * 进入实时层。
+ *
+ * 【现在它是主线】—— 主线剧情按钮传 roleId 进来。
+ * 旧的回合制版本保留在 ?proto=turn，作为对照和退路。
+ */
+function bootRtPrototype(roleId?: string): void {
   const app = document.getElementById('app');
   if (app !== null) app.style.display = 'none';
 
-  const teardown = startRtPrototype(document.body);
+  const teardown = startRtPrototype(
+    document.body,
+    roleId !== undefined ? { roleId } : {},
+  );
 
   const onExit = (): void => {
     window.removeEventListener('rt-exit', onExit);

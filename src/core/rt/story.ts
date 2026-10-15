@@ -19,7 +19,7 @@
  * ════════════════════════════════════════════════════════════════
  */
 
-import { allStories, findItem, findStory } from '../content.js';
+import { allStories, findAct, findItem, findStory } from '../content.js';
 import { evalAll } from '../conditions.js';
 import { applyEffects } from '../effects.js';
 import { judgeEnding } from '../endings.js';
@@ -34,7 +34,7 @@ import { narrativeView } from './narrative-bridge.js';
 import { findOpenCell } from './physics.js';
 import { nextFloat } from './rng.js';
 import { TILE } from './types.js';
-import type { GameEvent } from '../types.js';
+import type { GameEvent, SlotType, StoryNode } from '../types.js';
 import type { RtState } from './types.js';
 
 /** 连续这么多 tick 没有敌人，才算"房间清空" */
@@ -66,27 +66,77 @@ export function roomCleared(state: RtState): boolean {
  * 【权重用确定性随机，不用 Math.random】—— 否则同一个 seed
  * 复现不出同一局，神种分享就废了。
  */
+/**
+ * 这一层该出什么类型的剧情。
+ *
+ * 【第一版忽略了槽位】—— 只按权重平铺，结果节奏是平的：
+ * 引入性内容可能出现在最后一层，高潮可能出现在第一层。
+ *
+ * 回合制那边是地图生成器预留槽位、叙事引擎往里填。
+ * 实时层没有"地图上的槽位"这个东西（一屏一房间），
+ * 所以【用层数代替槽位】—— 语义是一样的：
+ *
+ *     第 1 层        ENTRY    引入。玩家还不知道自己是谁
+ *     中间层         MID      支线 / lore
+ *     最后一层       PREBOSS  高潮 / 重大抉择
+ */
+export function slotForDepth(depth: number, floors: number): SlotType {
+  if (depth <= 1) return 'ENTRY';
+  if (depth >= floors) return 'PREBOSS';
+  return 'MID';
+}
+
+/** 这一层有几层。读不出来时按 3 层兜底（第一幕的实际值） */
+function actFloors(state: RtState): number {
+  return findAct(state.actId)?.floors ?? 3;
+}
+
 export function pickStory(state: RtState): string | null {
   const view = narrativeView(state);
+  const slot = slotForDepth(state.depth, actFloors(state));
 
   const candidates = allStories().filter((node) => {
     if (state.seenStories.includes(node.id)) return false;
     if (node.minDepth !== undefined && state.depth < node.minDepth) return false;
     if (node.maxDepth !== undefined && state.depth > node.maxDepth) return false;
+    // slots 没写 = 任何槽位都能放。写了就必须包含当前槽位
+    if (node.slots !== undefined && !node.slots.includes(slot)) return false;
     return evalAll(node.requires, view);
   });
-  if (candidates.length === 0) return null;
+  /*
+   * 【一条内容都挑不出来时，放宽槽位限制再试一次】
+   *
+   * 严格按槽位挑的话，某一层可能一个节点都不剩（都被看过了、
+   * 或者 requires 都不满足）。结果是那一层空着 —— 玩家什么都看不到。
+   *
+   * 没内容可播，比播一个"槽位不太对"的内容更糟。
+   */
+  if (candidates.length === 0) {
+    const relaxed = allStories().filter((node) => {
+      if (state.seenStories.includes(node.id)) return false;
+      if (node.minDepth !== undefined && state.depth < node.minDepth) return false;
+      if (node.maxDepth !== undefined && state.depth > node.maxDepth) return false;
+      return evalAll(node.requires, view);
+    });
+    if (relaxed.length === 0) return null;
+    return weightedPick(state, relaxed);
+  }
 
+  return weightedPick(state, candidates);
+}
+
+/** 按 weight 挑一个。用确定性随机 —— 否则同一个 seed 复现不出同一局 */
+function weightedPick(state: RtState, nodes: readonly StoryNode[]): string | null {
   let total = 0;
-  for (const c of candidates) total += c.weight ?? 1;
+  for (const c of nodes) total += c.weight ?? 1;
 
   let roll = nextFloat(state) * total;
-  for (const c of candidates) {
+  for (const c of nodes) {
     roll -= c.weight ?? 1;
     if (roll <= 0) return c.id;
   }
   // 浮点收尾：roll 恰好落到 0 附近时上面可能没返回
-  return candidates[candidates.length - 1]?.id ?? null;
+  return nodes[nodes.length - 1]?.id ?? null;
 }
 
 /* ══════════════════════════════════════════════════════════════

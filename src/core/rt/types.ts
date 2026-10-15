@@ -19,6 +19,16 @@ import type { EndingDef, Flags, ItemInstance, MessageTone } from '../types.js';
 /** 一格多少像素。渲染、碰撞、帧数据里的"范围"都以此为单位换算 */
 export const TILE = 16;
 
+/**
+ * 角色表里 atk / def 的基准值。
+ *
+ * 动作伤害表是按【基准角色】调的，而角色表写的是绝对值
+ * （记梦者 atk 5 / def 1）。伤害公式里减掉基准，只取偏移量 ——
+ * 否则记梦者打一下凭空多 5 点，整张动作表废掉。
+ */
+export const BASE_ATK = 5;
+export const BASE_DEF = 1;
+
 /* 从回合制那边借几个类型 —— 叙事层两边共用同一套词汇表 */
 export type { EndingDef, Flags, ItemInstance, MessageTone } from '../types.js';
 
