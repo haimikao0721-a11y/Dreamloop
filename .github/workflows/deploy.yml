@@ -1,0 +1,76 @@
+# ════════════════════════════════════════════════════════════════
+#  自动部署到 GitHub Pages
+# ════════════════════════════════════════════════════════════════
+#
+#  每次 push 到 main：
+#    1. 装依赖
+#    2. 跑 pnpm verify（类型检查 + 构建 + 全部 120 个测试）
+#    3. 只有全绿才把 dist/ 发布出去
+#
+#  ⚠️ 关键设计：测试没过就【不部署】。
+#     一个"能打开但玩不了"的链接比没有链接更糟 ——
+#     别人点进来看到白屏，就不会再点第二次了。
+#
+#  为什么用相对路径 base：见 vite.config.ts。
+#  Pages 的项目页会挂在 /<repo>/ 子路径下，绝对路径会直接 404。
+# ════════════════════════════════════════════════════════════════
+
+name: 构建并部署到 Pages
+
+on:
+  push:
+    branches: [main]
+  # 允许在 Actions 页面手动触发（改了内容想立刻重发时用）
+  workflow_dispatch:
+
+# GITHUB_TOKEN 的最小权限：读代码 + 写 Pages + 取 OIDC 令牌
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署；新的 push 会取消排队中的旧任务
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 构建 + 全量测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # verify = tsc --noEmit && vite build && vitest run
+      # 里面包含 dist-smoke.test.ts —— 它会真的把构建产物 import 进来启动一遍，
+      # 所以这一步过了，就意味着"发布出去的那份字节"确实能跑
+      - name: 类型检查 + 构建 + 全部测试
+        run: pnpm verify
+
+      - name: 上传构建产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: 发布
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
