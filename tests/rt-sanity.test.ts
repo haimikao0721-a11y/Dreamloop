@@ -229,7 +229,8 @@ describe('理智', () => {
       for (const e of tickRt(s, makeInput({ x: 0, y: 0 }))) events.push(e.type);
     }
     expect(s.san).toBe(0);
-    expect(events.filter((e) => e === 'sanityZero'), '归零事件该发且只发一次').toHaveLength(1);
+    // 理智事件只在【状态切换】时发（归零 / 复原），不是每帧都发
+    expect(events.filter((e) => e === 'sanity'), '归零事件该发且只发一次').toHaveLength(1);
   });
 
   it('怪物靠近会额外掉理智', () => {

@@ -40,6 +40,10 @@ export interface SpawnOptions {
   light?: LightSource;
   /** 待在它旁边每秒扣多少理智 */
   sanDrain?: number;
+  /** 这个物品对应哪段剧情 */
+  storyNode?: string;
+  /** 物品定义 id */
+  itemDefId?: string;
 }
 
 /** 造一个实体。id 从 state.nextUid 取 —— 不用全局计数器，否则回放会串号 */
@@ -67,6 +71,8 @@ export function spawn(state: RtState, opts: SpawnOptions): Entity {
     attack: opts.attack,
     light: opts.light,
     sanDrain: opts.sanDrain,
+    storyNode: opts.storyNode,
+    itemDefId: opts.itemDefId,
   };
   state.nextUid++;
   state.entities.push(entity);

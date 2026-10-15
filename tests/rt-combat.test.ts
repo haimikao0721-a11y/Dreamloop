@@ -407,10 +407,13 @@ describe('战斗端到端', () => {
     for (let i = 0; i < totalFrames(SWING); i++) {
       events.push(...tickRt(state, makeInput({ x: 0, y: 0 })));
     }
-    const hit = events.find((e) => e.type === 'hit');
-    expect(hit, '没发出 hit 事件').toBeDefined();
-    expect(hit?.damage).toBe(SWING.damage);
-    expect(typeof hit?.x).toBe('number');
+    // 事件词汇表统一成了回合制那套 GameEvent，所以是 'attack' 不是 'hit'
+    const hit = events.find((e) => e.type === 'attack');
+    expect(hit, '没发出 attack 事件').toBeDefined();
+    if (hit?.type === 'attack') {
+      expect(hit.damage).toBe(SWING.damage);
+      expect(hit.killed).toBe(false);
+    }
   });
 
   it('攻击是【边沿触发】—— 按住不放不会自动连打', () => {

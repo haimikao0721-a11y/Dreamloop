@@ -34,8 +34,10 @@ import { burnFuel } from './light.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
 import { pick } from './rng.js';
 import { SANITY_MAX, findSpawnSpot, rollSpawn, tickSanity } from './sanity.js';
+import { triggerRoomStory, tryPickup, updateClearCounter } from './story.js';
 import { DEFAULT_SPAWN, NEUTRAL_INPUT, TILE, makeAiState } from './types.js';
-import type { Entity, InputState, RtState, SpawnTemplate } from './types.js';
+import type { GameEvent } from '../types.js';
+import type { Entity, Flags, InputState, RtState, SpawnTemplate } from './types.js';
 
 /** 模拟频率。所有帧数、计时都以它为单位（见 docs/06 第六节） */
 export const TICK_RATE = 60;
@@ -103,6 +105,16 @@ export interface RtInitOptions {
   sanDrainEvery?: number;
   /** 能刷哪些怪。空 = 不刷 */
   spawnTable?: SpawnTemplate[];
+
+  /* 叙事层要的（见 narrative-bridge.ts） */
+  actId?: string;
+  roleId?: string;
+  roleTags?: readonly string[];
+  depth?: number;
+  flags?: Flags;
+  deaths?: number;
+  atk?: number;
+  def?: number;
 }
 
 export function createInitialRtState(opts: RtInitOptions): RtState {
@@ -126,6 +138,22 @@ export function createInitialRtState(opts: RtInitOptions): RtState {
     spawnedTotal: 0,
     spawnTable: opts.spawnTable ?? [],
     spawnConfig: DEFAULT_SPAWN,
+
+    actId: opts.actId ?? 'act_1',
+    roleId: opts.roleId ?? 'dream_archivist',
+    roleTags: opts.roleTags ?? [],
+    depth: opts.depth ?? 1,
+    flags: opts.flags ?? {},
+    deaths: opts.deaths ?? 0,
+    atk: opts.atk ?? 5,
+    def: opts.def ?? 1,
+    inventory: [],
+    nextItemUid: 0,
+    seenStories: [],
+    takenChoices: [],
+    logLine: [],
+    roomStoryFired: false,
+    noEnemyTicks: 0,
   };
 
   // 玩家出生在 2.5 格处 —— 贴着墙角出生的话第一帧就会被判定为穿墙
@@ -186,6 +214,25 @@ export function cloneRtState(state: RtState): RtState {
     // 刷怪表是只读配置，直接共享；写它等于改配置，不该发生
     spawnTable: state.spawnTable,
     spawnConfig: state.spawnConfig,
+
+    actId: state.actId,
+    roleId: state.roleId,
+    roleTags: state.roleTags,
+    depth: state.depth,
+    // flags 必须深拷 —— 共享的话副本上改一个标记，原件也跟着变
+    flags: { ...state.flags },
+    deaths: state.deaths,
+    atk: state.atk,
+    def: state.def,
+    inventory: state.inventory.map((i) => ({ ...i })),
+    nextItemUid: state.nextItemUid,
+    pendingStory: state.pendingStory,
+    seenStories: [...state.seenStories],
+    takenChoices: [...state.takenChoices],
+    ending: state.ending,
+    logLine: state.logLine.map((l) => ({ ...l })),
+    roomStoryFired: state.roomStoryFired,
+    noEnemyTicks: state.noEnemyTicks,
   };
 }
 
@@ -193,10 +240,14 @@ export function cloneRtState(state: RtState): RtState {
    tick
    ══════════════════════════════════════════════════════════════ */
 
-export interface TickEvent {
-  type: string;
-  [key: string]: unknown;
-}
+/**
+ * 事件类型统一用回合制那套 GameEvent。
+ *
+ * 【为什么不自立一套】—— 表现层（ui-web/render.ts）已经认识了
+ * GameEvent 的每一个分支。实时层再定义一套的话，UI 要写两份渲染逻辑，
+ * 而且叙事层拿不到事件（openStory / applyEffects 都收 GameEvent）。
+ */
+export type TickEvent = GameEvent;
 
 /**
  * 推进一个 tick。【原地修改 state】，事件从返回值拿。
@@ -249,6 +300,11 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
       if (input.attack && entity.attack !== undefined) {
         beginAction(entity.action, entity.attack);
       }
+      // 交互键：捡脚下的东西。捡到叙事物件会直接开剧情，
+      // 而 openStory 会把 phase 改成 'story' —— 下一帧世界就冻住了
+      if (input.use) {
+        tryPickup(state, events);
+      }
     } else if (entity.ai !== undefined && player !== undefined) {
       updateAi(entity, player);
     }
@@ -273,26 +329,27 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
     applyHits(entity, hits);
     for (const hit of hits) {
       events.push({
-        type: 'hit',
+        type: 'attack',
         attacker: entity.id,
         target: hit.target.id,
         damage: hit.damage,
-        x: hit.target.body.x,
-        y: hit.target.body.y,
+        killed: !hit.target.alive,
       });
     }
   }
 
   // ⑤ 光：烧燃料。烧完的蜡烛要发事件，表现层好放个"熄了"的反馈
   for (const burnt of burnFuel(state)) {
-    events.push({ type: 'lightOut', id: burnt.id, x: burnt.body.x, y: burnt.body.y });
+    void burnt;
+    events.push({ type: 'message', text: '蜡烛烧完了。', tone: 'info' });
   }
 
   // ⑥ 理智。归零 / 复原都要发事件 —— 地图配色切换挂在这上面
   const san = tickSanity(state);
   if (san !== null) {
-    if (san.justZeroed) events.push({ type: 'sanityZero', san: san.after });
-    if (san.justRecovered) events.push({ type: 'sanityRecovered', san: san.after });
+    if (san.justZeroed || san.justRecovered) {
+      events.push({ type: 'sanity', delta: san.after - san.before, sanLeft: san.after });
+    }
   }
 
   // ⑦ 实时刷怪。理智越低刷得越多（见 sanity.ts 的 spawnMultiplier）
@@ -317,14 +374,21 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
           sanDrain: tpl.sanDrain,
         });
         state.spawnedTotal++;
-        events.push({ type: 'spawn', x: spot.x, y: spot.y, san: state.san });
+        void spot;
       }
     }
   }
 
-  // ⑧ 清理
-  const removed = sweep(state);
-  if (removed > 0) events.push({ type: 'sweep', removed });
+  // ⑧ 房间清空 → 叙事（第 4 步）。
+  // 【放在清理之后】—— 这一帧刚被打死的敌人要算进"没了"，
+  // 放在前面的话，最后一只怪死的那一帧计数还是旧的
+  updateClearCounter(state);
+  if (state.phase === 'playing') {
+    triggerRoomStory(state, events);
+  }
+
+  // ⑨ 清理（拾取和剧情可能又标记了新的死亡）
+  sweep(state);
 
   state.tick++;
   return events;

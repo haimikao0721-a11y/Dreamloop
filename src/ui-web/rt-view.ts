@@ -31,6 +31,8 @@ import {
   totalFrames,
 } from '@core/rt/index.js';
 import type { ActionState, Entity, InputState, RtState } from '@core/rt/index.js';
+import { getCurrentStory, getVisibleChoiceIndices } from '@core/narrative';
+import { chooseInStory, narrativeView, tryPickup } from '@core/rt/index.js';
 import { ARCHIVIST_LIGHT } from '@data/rt/actions.js';
 import { CRAWLER, ORDERLY } from '@data/rt/enemies.js';
 import type { RtEnemyDef } from '@data/rt/enemies.js';
@@ -153,6 +155,34 @@ const CSS = `
 .rt-attack.on { display: block; }
 .rt-attack:active { background: rgba(216,168,72,0.5); }
 .rt-hint { padding: 0 12px calc(env(safe-area-inset-bottom) + 10px); font-size: 11px; color: #52525f; }
+
+/* 全屏剧情层。世界在这期间是冻住的 —— 见 story.ts 的 phase 处理 */
+.rt-story {
+  position: fixed; inset: 0; z-index: 300; display: none;
+  background: rgba(6,6,9,0.97); backdrop-filter: blur(4px);
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 32px) 26px calc(env(safe-area-inset-bottom) + 32px);
+}
+.rt-story.show { display: flex; }
+.rt-story-inner {
+  width: 100%; max-width: 640px; margin: auto;
+  display: flex; flex-direction: column; gap: 22px;
+}
+.rt-story-text {
+  font-size: clamp(15px, 3.4vw, 18px); line-height: 2.05;
+  color: #d5d2ca; letter-spacing: 0.02em; white-space: pre-wrap;
+}
+.rt-story-quote {
+  border-left: 2px solid #d8a848; padding-left: 14px;
+  color: #d8a848; font-style: italic; line-height: 1.95;
+}
+.rt-story-choices { display: flex; flex-direction: column; gap: 10px; }
+.rt-story-choice {
+  padding: 15px 17px; background: #16161d; border: 1px solid #2c2c38;
+  border-radius: 8px; color: #d5d2ca; font-family: inherit; font-size: 14px;
+  line-height: 1.85; text-align: left; cursor: pointer;
+}
+.rt-story-choice:hover, .rt-story-choice:focus-visible { outline: none; border-color: #d8a848; }
 `;
 
 /* ── 素材 ── */
@@ -232,7 +262,7 @@ function createInputRig(
   wheelEl: HTMLElement,
   knobEl: HTMLElement,
   attackEl: HTMLElement,
-  onPlant?: () => void,
+  onInteract?: () => void,
 ): InputRig {
   let moveX = 0;
   let moveY = 0;
@@ -261,7 +291,9 @@ function createInputRig(
       return;
     }
     if (k === 'e') {
-      onPlant?.();
+      // 【一个键，上下文决定】—— 脚下有东西就捡，没有才插蜡烛。
+      // 分成两个键的话，手机端要多一个按钮，而这两件事永远不会同时想做
+      onInteract?.();
       e.preventDefault();
       return;
     }
@@ -398,8 +430,15 @@ export function startRtPrototype(root: HTMLElement): () => void {
   attackBtn.className = 'rt-attack';
   attackBtn.textContent = '攻击';
 
+  /* 全屏剧情层。内容由 renderStory() 填 —— 它跑在每一帧里 */
+  const storyEl = document.createElement('section');
+  storyEl.className = 'rt-story';
+  const storyInner = document.createElement('div');
+  storyInner.className = 'rt-story-inner';
+  storyEl.appendChild(storyInner);
+
   wrap.append(bar, stage, hintBar);
-  root.append(style, wrap, wheel, attackBtn);
+  root.append(style, wrap, wheel, attackBtn, storyEl);
 
   const coarse = window.matchMedia('(pointer: coarse)').matches;
   if (coarse) {
@@ -533,7 +572,8 @@ export function startRtPrototype(root: HTMLElement): () => void {
   }
 
   const rig = createInputRig(wheel, knob, attackBtn, () => {
-    plantCarriedCandle();
+    // 先看脚下有没有东西
+    if (!tryPickup(state, [])) plantCarriedCandle();
   });
   rig.attach();
 
@@ -543,6 +583,66 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
   /** 受击闪白：命中那一帧记下位置，之后画一小段 */
   const flashes: { x: number; y: number; ttl: number }[] = [];
+
+  /**
+   * 全屏剧情层。phase==='story' 时显示，选完消失。
+   *
+   * 【每帧重建 DOM】—— 剧情节点只在状态变化时变，
+   * 但用一个 sig 挡住重复重建，避免每帧都重排。
+   */
+  let storySig = '';
+
+  function renderStory(): void {
+    const view = narrativeView(state);
+    const node = getCurrentStory(view);
+
+    if (node === undefined) {
+      if (storySig !== '') {
+        storySig = '';
+        storyEl.classList.remove('show');
+        storyInner.textContent = '';
+      }
+      return;
+    }
+
+    const idx = getVisibleChoiceIndices(view);
+    const sig = `${node.id}:${idx.join(",")}`;
+    if (sig === storySig) return;
+    storySig = sig;
+
+    storyInner.textContent = '';
+    const text = document.createElement('div');
+    text.className = 'rt-story-text';
+    text.textContent = node.text;
+    storyInner.appendChild(text);
+
+    if (node.quote !== undefined && node.quote !== '') {
+      const q = document.createElement('div');
+      q.className = 'rt-story-quote';
+      q.textContent = node.quote;
+      storyInner.appendChild(q);
+    }
+
+    const list = document.createElement('div');
+    list.className = 'rt-story-choices';
+    for (const raw of idx) {
+      const choice = node.choices[raw];
+      if (choice === undefined) continue;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rt-story-choice';
+      btn.textContent = choice.text;
+      // 【传的是原始下标】—— chooseInStory 要按它记 once
+      btn.addEventListener('click', () => {
+        chooseInStory(state, raw, []);
+        storySig = '';
+        renderStory();
+      });
+      list.appendChild(btn);
+    }
+    storyInner.appendChild(list);
+    storyEl.classList.add('show');
+  }
 
   let raf = 0;
   let last = performance.now();
@@ -654,6 +754,22 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
     for (const e of state.entities) {
       if (!e.alive) continue;
+      if (e.kind === 'item') {
+        // 掉落物：画一个跳动的光点。素材还没有，先用形状顶上 ——
+        // 关键是玩家要能看见"这里有东西"
+        const t = (state.tick % 60) / 60;
+        const r = 3 + Math.sin(t * Math.PI * 2) * 1.2;
+        ctx.beginPath();
+        ctx.arc(e.body.x, e.body.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#d8a848';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(216,168,72,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(e.body.x, e.body.y, r + 3, 0, Math.PI * 2);
+        ctx.stroke();
+        continue;
+      }
       drawEntity(e);
       drawTelegraph(e);
     }
@@ -719,8 +835,11 @@ export function startRtPrototype(root: HTMLElement): () => void {
     for (let i = 0; i < ticks; i++) {
       const events = tickRt(state, rig.consume());
       for (const ev of events) {
-        if (ev.type === 'hit' && typeof ev.x === 'number' && typeof ev.y === 'number') {
-          flashes.push({ x: ev.x, y: ev.y, ttl: 6 });
+        // attack 事件只带 id，位置要自己查 —— 事件不背实体坐标，
+        // 因为那一帧之后目标可能已经被清掉了
+        if (ev.type === 'attack') {
+          const t = state.entities.find((x) => x.id === ev.target);
+          if (t !== undefined) flashes.push({ x: t.body.x, y: t.body.y, ttl: 6 });
         }
       }
       for (const f of flashes) f.ttl--;
@@ -730,6 +849,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
     }
 
     render();
+    renderStory();
 
     frames++;
     fpsTimer += realDt;
@@ -803,6 +923,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
     wrap.remove();
     wheel.remove();
     attackBtn.remove();
+    storyEl.remove();
     style.remove();
   };
 }

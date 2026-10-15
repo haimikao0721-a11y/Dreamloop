@@ -1,3 +1,5 @@
+import type { EndingDef, Flags, ItemInstance, MessageTone } from '../types.js';
+
 /**
  * ════════════════════════════════════════════════════════════════
  *  core/rt/types.ts —— 实时层的契约
@@ -16,6 +18,9 @@
 
 /** 一格多少像素。渲染、碰撞、帧数据里的"范围"都以此为单位换算 */
 export const TILE = 16;
+
+/* 从回合制那边借几个类型 —— 叙事层两边共用同一套词汇表 */
+export type { EndingDef, Flags, ItemInstance, MessageTone } from '../types.js';
 
 export interface Vec2 {
   x: number;
@@ -150,6 +155,13 @@ export interface Entity {
   light?: LightSource;
   /** 待在它旁边每秒扣多少理智。只有敌人有 */
   sanDrain?: number;
+  /**
+   * 这个物品对应哪段剧情。拾起来就播它。
+   * 只有 kind==='item' 且是叙事物件时才有值。
+   */
+  storyNode?: string;
+  /** 物品定义 id（渲染和拾取用） */
+  itemDefId?: string;
 }
 
 /* ── 光 ── */
@@ -298,6 +310,46 @@ export interface RtState {
   /** 从这里面挑着刷。空数组 = 不刷怪 */
   spawnTable: SpawnTemplate[];
   spawnConfig: SpawnConfig;
+
+  /* ── 叙事（接回叙事层用，见 core/rt/narrative-bridge.ts） ── */
+
+  actId: string;
+  roleId: string;
+  /** 角色 tag —— 剧情选项门控用（学者 / 信徒 / 医者 …） */
+  roleTags: readonly string[];
+  /** 当前层（从 1 开始） */
+  depth: number;
+  /** 跨层持久的标记。结局判定全靠它 */
+  flags: Flags;
+  /** 累计死亡次数（跨局，元叙事层） */
+  deaths: number;
+  /** 玩家属性。和实体上的 hp 分开：atk/def 是叙事层要读写的 */
+  atk: number;
+  def: number;
+  /** 已持有物品 */
+  inventory: ItemInstance[];
+  nextItemUid: number;
+  /** 剧情层打开时，当前节点 id */
+  pendingStory?: string;
+  seenStories: string[];
+  takenChoices: string[];
+  ending?: EndingDef;
+  /** 屏幕日志。pushLog 会写它 */
+  logLine: { text: string; tone: MessageTone }[];
+
+  /* ── 房间清空 → 叙事槽位 ── */
+
+  /** 这个房间的叙事是否已经触发过。防止清空后每帧都触发 */
+  roomStoryFired: boolean;
+  /**
+   * 已经连续多少 tick 没有敌人。
+   *
+   * 【为什么不能简单地判断"场上没怪了"】
+   * 实时刷怪会让房间【永远不清空】—— 刚打完一只，下一只又冒出来。
+   * 所以"清空"必须定义成"持续一段时间没有敌人"。
+   * 1.5 秒（90 tick）够玩家喘口气，也不至于等到不耐烦。
+   */
+  noEnemyTicks: number;
 }
 
 /* ── 工具 ── */
