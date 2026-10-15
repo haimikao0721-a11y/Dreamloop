@@ -528,8 +528,11 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const canvas = document.createElement('canvas');
   canvas.width = plan.cols * TILE;
   canvas.height = plan.rows * TILE + WALL_TOP_H;
+  // 【必须和 canvas.height 用同一个算式】—— 差一个 WALL_TOP_H 的话，
+  // 画布会纵向压缩 6%：像素画的每个像素高度都被压掉一点，
+  // 表现是"糊"而不是"变形"，很难联想到尺寸不一致
   canvas.style.width = `${plan.cols * TILE * plan.scale}px`;
-  canvas.style.height = `${plan.rows * TILE * plan.scale}px`;
+  canvas.style.height = `${(plan.rows * TILE + WALL_TOP_H) * plan.scale}px`;
   stage.appendChild(canvas);
 
   /** 把格子坐标夹进房间内 —— 房间尺寸是算出来的，写死坐标会摆到墙里或墙外 */

@@ -537,65 +537,88 @@ const SPRITE_W = 16;
 const SPRITE_H = 24;
 
 /**
- * 记梦者：瘦、驼背、深色外套，怀里抱着本子。
+ * 记梦者：瘦、深色外套、怀里抱着本子。
  *
- * 【外套比墙亮一档】—— 墙用的是 d(#1c1c26)，外套用 s(#272733)。
- * 实时动作游戏里，玩家必须 0.2 秒内分清"哪个是我、哪里是墙"。
- * 全用同一个深色的话，人和墙糊成一片，帧数设计得再好也读不出来。
+ * ── 重画过一次 ──
+ *
+ * 第一版是"方块加两个点"：头是个矩形、身体是个矩形、没有轮廓、
+ * 没有明暗。远看就是几个灰色块，读不出"这是个人"。
+ *
+ * 现在按三条规则重画：
+ *
+ *   1. 【有轮廓】—— 深色边(k)包一圈，让人从背景里"抠"出来
+ *   2. 【光从上方来】—— 肩部最亮(e)，往下逐级压暗(l → s)，
+ *      和墙顶面的打光是同一个方向，整个画面才是一套光
+ *   3. 【肩膀比头宽】—— 这是人形最基本的识别特征。
+ *      头宽身窄的话看起来是钉子
+ *
+ * ── 亮度是【为了可读性】定的，不是为了好看 ──
+ *
+ * 第一版外套用 l/s(#343442/#272733)，而 s 和墙的砖缝【是同一个颜色】。
+ * 在游戏里看就是一团糊在地板上 —— 玩家找不到自己。
+ *
+ * 现在外套提到 f/e(#52525f/#42424f)，肩部 u(#6b6b7a)。
+ * 主题上"他是个穿深色外套的人"没错，但【可读性优先】——
+ * 动作游戏里玩家 0.2 秒找不到自己，帧数设计得再好也没用。
  */
 const ARCHIVIST = [
   '................',
+  '................',
   '.....kkkkkk.....',
-  '....kkkkkkkk....',
-  '....kppppppk....',
-  '....kppppppk....',
+  '....kddddddk....',
+  '....kdppppdk....',
   '....kpkppkpk....',
   '....kppppppk....',
   '.....kppppk.....',
   '......kppk......',
-  '.....ssssss.....',
-  '....ssssssss....',
-  '...sssddddsss...',
-  '...sssddddsss...',
-  '...sssddddsss...',
-  '...ssssssssss...',
-  '...ssssssssss...',
-  '....ssssssss....',
-  '....ssssssss....',
-  '.....ssssss.....',
-  '.....ss..ss.....',
-  '.....ss..ss.....',
-  '.....ss..ss.....',
-  '....sss..sss....',
+  '....kkkkkkkk....',
+  '...kuuuuuukk....',
+  '..kuufffuuueek..',
+  '..kuffffuuueek..',
+  '..kufbbbuuueek..',
+  '..kufbbbuuueek..',
+  '..kuffffuuueek..',
+  '..kuffffuuueek..',
+  '...kufffuuueek..',
+  '....kkkkkkkk....',
+  '....ksskkssk....',
+  '....ksskkssk....',
+  '....ksskkssk....',
   '....kkk..kkk....',
+  '................',
 ];
 
-/** 值夜护士：结实、白制服、护士帽 */
+/**
+ * 值夜护士：结实、白制服、护士帽。
+ *
+ * 和记梦者同一套画法（轮廓 + 上亮下暗 + 肩比头宽），
+ * 但体型更宽 —— 两个角色站一起要一眼分得出谁是谁。
+ */
 const NURSE = [
   '................',
-  '.....wwwwww.....',
+  '................',
   '....wwwwwwww....',
-  '....kppppppk....',
-  '....kppppppk....',
+  '....kbbbbbbk....',
+  '....kbpppppk....',
   '....kpkppkpk....',
-  '....kppppppk....',
+  '....kpppppbk....',
   '.....kppppk.....',
   '......kppk......',
-  '.....bbbbbb.....',
-  '....bbbbbbbb....',
-  '...bbbddddbbb...',
-  '...bbbddddbbb...',
-  '...bbbddddbbb...',
-  '...bbbbbbbbbb...',
-  '...bbbbbbbbbb...',
-  '....bbbbbbbb....',
-  '....bbbbbbbb....',
-  '.....bbbbbb.....',
-  '.....bb..bb.....',
-  '.....bb..bb.....',
-  '.....bb..bb.....',
-  '....bbb..bbb....',
-  '....kkk..kkk....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwrrrrrrwwk..',
+  '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kbwwwwwwwwbk..',
+  '...kkkkkkkkkk...',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kbbk.kbbk...',
+  '.....kk...kk....',
 ];
 
 /**
@@ -638,7 +661,9 @@ function overlay(body, cells) {
 /**
  * 爬行物：矮、多足、看不清脸。
  * 故意画得【不像人】—— 它逼玩家走位，所以视觉上要让人想躲开。
- * 身体压在画框下半部分，看起来才"贴地"。
+ *
+ * 【为什么压在画框下半部分】它贴地爬，重心低。画在框中间的话
+ * 看起来是"站着的一坨"。脚在最下面，身体堆在脚上，才读得出"矮"。
  */
 const CRAWLER = [
   '................',
@@ -650,19 +675,19 @@ const CRAWLER = [
   '................',
   '................',
   '................',
-  '.....kkkkkk.....',
-  '....kmmmmmmk....',
-  '...kmmkkkkmmk...',
-  '...kmkmmmmkmk...',
-  '...kmmkkkkmmk...',
+  '......kkkk......',
+  '....kkmmmmkk....',
   '...kmmmmmmmmk...',
-  '....kmmmmmmk....',
-  '.....kkkkkk.....',
-  '...k..k..k..k...',
-  '..k...k..k...k..',
-  '..k...k..k...k..',
-  '.k....k..k....k.',
-  '................',
+  '..kmmkkkkkkmmk..',
+  '..kmkHHHHHHkmk..',
+  '..kmkHkkkkHkmk..',
+  '..kmkHHHHHHkmk..',
+  '..kmmkkkkkkmmk..',
+  '...kmmmmmmmmk...',
+  '....kkkkkkkk....',
+  '..k..k....k..k..',
+  '.k...k....k...k.',
+  'k....k....k....k',
   '................',
   '................',
 ];
@@ -673,32 +698,35 @@ const CRAWLER = [
  * 【用中灰 f(#52525f)，明显比墙亮】—— 第一版用的 d 和墙同色，
  * 结果在房间中间站着完全看不见，表现成"这个敌人没生成"。
  * 它是场上最大的威胁，必须一眼就找到。
+ *
+ * 体型比两个玩家角色都宽一圈。同一个画法（轮廓 + 上亮下暗），
+ * 但【横向拉满】—— 玩家不用看细节就知道"这个更大更能打"。
  */
 const ORDERLY = [
   '................',
-  '.....kkkkkk.....',
+  '................',
   '....kkkkkkkk....',
-  '....kppppppk....',
-  '....kpkppkpk....',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '......kppk......',
-  '....ffffffff....',
-  '...ffffffffff...',
-  '..ffffffffffff..',
-  '..ffufffffufff..',
-  '..ffufffffufff..',
-  '..ffffffffffff..',
-  '..ffffffffffff..',
-  '...ffffffffff...',
-  '...ffffffffff...',
-  '....ffffffff....',
-  '....ffffffff....',
-  '....ff....ff....',
-  '....ff....ff....',
-  '....ff....ff....',
-  '...fff....fff...',
-  '...kkk....kkk...',
+  '...kffffffffk...',
+  '...kfppppppfk...',
+  '...kfpkppkpfk...',
+  '...kfppppppfk...',
+  '....kfppppfk....',
+  '.....kfppfk.....',
+  '...kffffffffk...',
+  '..kffffffffffk..',
+  '.kffeeeeeeeeffk.',
+  'kffeeeeeeeeeeffk',
+  'kffeelllleeeeffk',
+  'kffeelllleeeeffk',
+  'kffeeeeeeeeeeffk',
+  'kffeeeeeeeeeeffk',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkk..',
+  '...kffkkkkffk...',
+  '...kffkkkkffk...',
+  '...kffkkkkffk...',
+  '...kffk..kffk...',
+  '....kk....kk....',
 ];
 
 /** 爬行物的扑击：整个身体前倾，武器就是它的嘴 */
