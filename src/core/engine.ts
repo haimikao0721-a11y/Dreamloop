@@ -116,7 +116,7 @@ export function createInitialState(opts: InitOptions): {
     pushLog(state, `（这是你第 ${state.deaths + 1} 次醒来。）`, 'lore');
   }
 
-  // ⚠️ 这里【不】预填叙事槽位。
+  // 这里【不】预填叙事槽位。
   //    内容在"房间被清空"的那一刻才选（见 triggerSlotForRoom），
   //    这样 hasItem / san / flag 这类会变化的出现条件反映的是当下真实状态。
   //    生成时就填的话，条件尚未成立的内容永远填不上。
@@ -166,7 +166,7 @@ function handleStory(s: GameState, intent: Intent, events: GameEvent[]): void {
 
   if (intent.type !== 'choose') return;
 
-  // ⚠️ 用 getVisibleChoiceIndices 拿【原始下标】。
+  // 用 getVisibleChoiceIndices 拿【原始下标】。
   //    因为 requiresTag 过滤会让可见下标和原始下标错位，
   //    而 once 判定必须基于原始下标，否则会记错选项。
   const rawIndices = getVisibleChoiceIndices(s);
@@ -328,7 +328,7 @@ function pickUpAt(s: GameState, pos: Pos, events: GameEvent[]): void {
     return;
   }
 
-  // ⚠️ 遗物的 effects 必须在【获得时】结算，不能当纯被动数据晾着。
+  // 遗物的 effects 必须在【获得时】结算，不能当纯被动数据晾着。
   //    内容的结局判定会依赖只有遗物才写入的 flag（比如 carries_the_coin），
   //    不结算的话那条结局线永远不可达 —— 作者写了却没人能走到。
   if (def?.kind === 'relic') {
@@ -386,7 +386,7 @@ function checkDeath(s: GameState, events: GameEvent[]): boolean {
   s.phase = 'dead';
   s.deaths += 1;
 
-  // ⚠️ 核心设计：死亡不是"读档"，是"又在梦里醒了一次"。
+  // 核心设计：死亡不是"读档"，是"又在梦里醒了一次"。
   //    flags 全部保留 —— 死得越多，你知道得越多。
   //    这让肉鸽的重复游玩从叙事障碍变成了叙事资产：
   //    线性剧情游戏永远做不出"用死亡次数解锁内容"这件事。

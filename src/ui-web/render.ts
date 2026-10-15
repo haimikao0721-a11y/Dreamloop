@@ -873,7 +873,7 @@ export function createUi(opts: RenderOptions): UiHandle {
   /**
    * 「复制这一局的链接」按钮。
    *
-   * ⚠️ 剪贴板 API 在非 HTTPS 上下文、或没有用户手势时会失败。
+   * 剪贴板 API 在非 HTTPS 上下文、或没有用户手势时会失败。
    *    失败时把 URL 直接显示在气泡里让玩家手动复制 ——
    *    只报一句"复制失败"等于这个功能没做。
    */

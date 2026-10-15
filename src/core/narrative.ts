@@ -62,7 +62,7 @@ function pickStoryForSlot(
 /**
  * 把本层所有空槽位一次性填满。
  *
- * ⚠️ 这不是主路径。真正的填槽发生在【触发的那一刻】（见 triggerSlotForRoom）。
+ * 这不是主路径。真正的填槽发生在【触发的那一刻】（见 triggerSlotForRoom）。
  *    保留这个函数是给测试和调试用的：想看看"这层理论上能出什么内容"时调它。
  *
  * 为什么不在地图生成时就填好：
@@ -177,7 +177,7 @@ export function openStory(state: GameState, nodeId: string, events: GameEvent[])
  *   · requires    —— 条件门控（flag / san / deaths …）
  *   · once        —— 选过一次就不再显示
  *
- * ⚠️ UI 必须用这个函数的返回值渲染选项，并用它的下标 dispatch
+ * UI 必须用这个函数的返回值渲染选项，并用它的下标 dispatch
  *    { type:'choose', index }。UI 若自己过滤，下标会错位，
  *    玩家会选到自己没看见的那个选项。
  */

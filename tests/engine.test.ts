@@ -551,7 +551,7 @@ describe('死亡与醒来', () => {
     expect(revived.depth).toBe(1);
     expect(revived.player.hp).toBe(revived.player.hpMax);
     expect(revived.player.san).toBe(revived.player.sanMax);
-    // ⚠️ 关键：flags 必须跨死保留 —— 这是"死亡即叙事"的地基
+    // 关键：flags 必须跨死保留 —— 这是"死亡即叙事"的地基
     expect(revived.flags['has_died']).toBe(true);
   });
 

@@ -29,7 +29,7 @@ export default defineConfig({
 
     rollupOptions: {
       output: {
-        // ⚠️ 用固定文件名，不用内容 hash。
+        // 用固定文件名，不用内容 hash。
         //
         // 原因：tests/dist-smoke.test.ts 要 import 构建产物，
         // 验证"真正发布出去的那份代码"能跑起来。带 hash 的文件名

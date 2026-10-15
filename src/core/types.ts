@@ -308,8 +308,8 @@ export interface EndingDef {
    * 肉鸽的命门是重开率，而"我差一步就拿到了"是最强的重开动机。
    *
    * 写法建议：说【玩家该做什么】，不要说内部 flag 名。
-   *   ✅ '在还清醒的时候念出那个名字'
-   *   ❌ '需要 knows_the_name = true'
+   *   '在还清醒的时候念出那个名字'
+   *   '需要 knows_the_name = true'
    */
   readonly hint?: string;
 }
