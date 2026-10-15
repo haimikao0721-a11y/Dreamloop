@@ -10,7 +10,7 @@
 ## 1. 定义
 
 - **「本项目」**：《梦境循环》（Dreamloop），仓库地址
-  https://github.com/haimikao0721-a11y/-Dreamloop
+  https://github.com/haimikao0721-a11y/Dreamloop
 - **「维护者」**：本仓库的所有者及其指定的管理者
 - **「贡献」**：你以任何形式提交给本项目的原创作品，
   包括代码、剧情文本、数据、文档、美术、音乐及其他素材
