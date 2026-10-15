@@ -417,7 +417,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
   hintBar.textContent =
-    '第 3 步原型：理智掉光地图会换一层皮。回到光里（壁灯 / 蜡烛）能爬回来。E 插蜡烛。';
+    '第 4 步：打完等 1.5 秒会掉金色光点，走过去按 E 捡。调参：?drain= ?candle= ?spawn= ?san= ?seed=';
 
   const wheel = document.createElement('div');
   wheel.className = 'rt-wheel';
@@ -474,11 +474,35 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const sanParam = Number(qs.get('san'));
   const seedParam = Number(qs.get('seed'));
 
+  /**
+   * 理智平衡的几个数做成可调的。
+   *
+   * 【为什么】这几个值是"必须真人试玩才调得动"的那一类 ——
+   * 机器人测不出"压力够不够"。写成常量的话，每试一组都要改代码、
+   * 等构建、等部署；做成参数就能连着试十组。
+   *
+   *   ?drain=720    自然流失：每多少 tick 掉 1 点（默认 720 = 12 秒）
+   *   ?candle=1     手持蜡烛：每秒回多少理智（默认 1）
+   *   ?spawn=480    刷怪基准间隔：多少 tick 一只（默认 480 = 8 秒）
+   */
+  const num = (key: string, fallback: number): number => {
+    const v = Number(qs.get(key));
+    return qs.has(key) && Number.isFinite(v) ? v : fallback;
+  };
+
+  const drainEvery = num('drain', 720);
+  const candleRate = num('candle', 1);
+  const spawnInterval = num('spawn', 480);
+
   const state: RtState = createInitialRtState({
     seed: Number.isFinite(seedParam) && seedParam !== 0 ? seedParam : 20261015,
     map: makeTestRoom(plan.cols, plan.rows),
+    sanDrainEvery: drainEvery,
     ...(Number.isFinite(sanParam) && qs.has('san') ? { san: sanParam } : {}),
   });
+  state.spawnConfig = { ...state.spawnConfig, baseInterval: spawnInterval };
+  // 玩家出生时理智回满，否则 ?san= 之外的参数都看不出效果
+  state.san = Number.isFinite(sanParam) && qs.has('san') ? sanParam : state.sanMax;
 
   const player = findPlayer(state);
   if (player !== undefined) {
@@ -529,7 +553,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
      *
      * 恢复理智【只能】靠光。没有"吃药回理智"这个东西。
      */
-    player.light = makeLight(4 * TILE, 1, 60 * 90);
+    player.light = makeLight(4 * TILE, candleRate, 60 * 90);
   }
 
   /*
