@@ -109,6 +109,8 @@ tests/              115 个测试
 👉 **先读 [CONTRIBUTING.md](CONTRIBUTING.md)** —— 里面有 CLA 签署方式、
 最容易上手的第一次贡献、以及什么内容我们不会合入。
 
+📋 已经出过力的人记在 **[CONTRIBUTORS.md](CONTRIBUTORS.md)**。
+
 ### 写内容（不需要碰代码）
 
 内容全部是数据。想加一个怪、一段剧情、一个结局，只改 `src/data/packs/core/` 下的文件。

@@ -181,6 +181,7 @@ pnpm verify     # 提交前跑这个：类型检查 + 构建 + 全部测试
 3. `pnpm verify` 必须全绿
 4. 提 PR，描述里写「我同意 CLA.md 的条款」
 5. **说清楚你改了什么、为什么**
+6. 合并后你会被加到 [CONTRIBUTORS.md](CONTRIBUTORS.md)
 
 ### 我们会怎么审
 
