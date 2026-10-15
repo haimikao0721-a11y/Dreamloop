@@ -17,7 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CORE_PACK } from '../src/data/packs/core/index.js';
+import { CORE_PACK } from '../src/data/index.js';
 import {
   createInitialState,
   getVisibleChoices,

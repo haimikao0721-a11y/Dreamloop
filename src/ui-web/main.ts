@@ -40,7 +40,7 @@ import type {
   ReduceResult,
 } from '@core/types';
 // 内容包入口：全项目只有这一行认识数据层的路径
-import { CORE_PACK } from '@data/packs/core/index';
+import { CORE_PACK } from '@data/index';
 
 import { createInput, formatProbe, isInputMode, probeEnvironment } from './input';
 import type { InputNotice } from './input';

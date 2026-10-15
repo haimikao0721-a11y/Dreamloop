@@ -21,7 +21,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CORE_PACK } from '../src/data/packs/core/index.js';
+import { CORE_PACK } from '../src/data/index.js';
 import {
   createInitialState,
   DIR_VECTORS,

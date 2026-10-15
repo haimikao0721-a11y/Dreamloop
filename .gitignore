@@ -17,6 +17,9 @@ coverage/
 .deploy-test/
 .uicheck/
 
+# ── git filter-repo 的工作目录 ──
+.git-rewrite/
+
 # ── 编辑器 / 系统 ──
 .vscode/*
 !.vscode/extensions.json

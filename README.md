@@ -55,22 +55,31 @@ pnpm build      # 生产构建到 dist/
 
 ```
 src/
-├─ core/            纯 TS 逻辑核心 —— 零 DOM 依赖，2400 行
-│  ├─ types.ts        契约层：所有类型定义
-│  ├─ engine.ts       状态机：createInitialState + reduce
-│  ├─ map.ts          地牢生成（含叙事槽位预留）
-│  ├─ narrative.ts    叙事引擎：槽位填充、选项过滤
-│  ├─ combat.ts       战斗结算
-│  ├─ effects.ts      效果词汇表的唯一实现
-│  ├─ conditions.ts   声明式条件求值
-│  ├─ endings.ts      结局判定 + "差一点就走到"
-│  ├─ content.ts      内容包注册表（支持多包 + mod 覆盖）
-│  └─ rng.ts          确定性随机数（种子复现）
-├─ data/packs/core/ 第一幕内容：2 角色 / 6 怪 / 10 物品 / 10 剧情 / 3 结局
-└─ ui-web/          响应式 UI + 四种输入适配器
+├─ core/              纯 TS 逻辑核心，零 DOM 依赖
+│  ├─ types.ts          契约层：所有类型定义
+│  ├─ engine.ts         状态机：createInitialState + reduce
+│  ├─ map.ts            地牢生成（含叙事槽位预留）
+│  ├─ narrative.ts      叙事引擎：槽位填充、选项过滤
+│  ├─ combat.ts         战斗结算
+│  ├─ effects.ts        效果词汇表的唯一实现
+│  ├─ conditions.ts     声明式条件求值
+│  ├─ endings.ts        结局判定 + "差一点就走到"
+│  ├─ content.ts        内容包注册表（支持多包 + mod 覆盖）
+│  ├─ rng.ts            确定性随机数（种子复现）
+│  └─ index.ts          运行时 API
+├─ data/
+│  ├─ index.ts          内容包入口，再导出 CORE_PACK
+│  └─ packs/core/       第一幕内容：2 角色 / 6 怪 / 10 物品 / 10 剧情 / 3 结局
+└─ ui-web/            响应式 UI + 四种输入适配器
 
-docs/               设计文档与内容作者手册
-tests/              115 个测试
+assets/
+├─ characters/        角色动作，按角色 id
+├─ map/               地形
+├─ items/             物品
+└─ cutscenes/         过场画面
+
+docs/                 设计文档与内容作者手册
+tests/                引擎、内容、界面与构建产物
 ```
 
 ---
@@ -124,21 +133,23 @@ tests/              115 个测试
 设计意图与架构说明见 [`docs/01-核心循环.md`](docs/01-核心循环.md)。
 第一幕的完整结构（剧情图、flag 依赖、结局路径、平衡调整记录）见
 [`docs/03-第一幕设计.md`](docs/03-第一幕设计.md)。
+过场和文字各归哪一层见 [`docs/05-表现与文字.md`](docs/05-表现与文字.md)。
 
 ---
 
 ## 测试在守什么
 
 ```bash
-pnpm test    # 115 个测试，约 20 秒
+pnpm test
+pnpm verify    # 类型检查 + 构建 + 全部测试
 ```
 
-| 测试文件 | 数量 | 守什么 |
-|---|---|---|
-| `engine.test.ts` | 53 | 种子复现、纯函数性、伤害公式边界、条件求值、2000 步模糊测试 |
-| `content.test.ts` | 36 | 内容引用完整性、角色门控、结局可达性、**平衡守卫**、节奏测量 |
-| `ui-smoke.test.ts` | 20 | UI 能挂载、所有 GameEvent 都有处理、四种输入、分享降级 |
-| `dist-smoke.test.ts` | 6 | **构建产物能跑起来**、相对路径可子目录部署 |
+| 测试文件 | 守什么 |
+|---|---|
+| `engine.test.ts` | 种子复现、纯函数性、伤害公式边界、条件求值、2000 步模糊测试 |
+| `content.test.ts` | 内容引用完整性、角色门控、结局可达性、**平衡守卫**、节奏测量 |
+| `ui-smoke.test.ts` | UI 能挂载、所有 GameEvent 都有处理、四种输入、分享降级 |
+| `dist-smoke.test.ts` | **构建产物能跑起来**、相对路径可子目录部署 |
 
 写内容的人只需要跑内容那部分：
 
@@ -177,7 +188,7 @@ pnpm validate   # = vitest run tests/content.test.ts
 | 部分 | 协议 | 文件 |
 |---|---|---|
 | **代码**（`src/core/`、`src/ui-web/`、`tests/`） | **MIT** | [LICENSE](LICENSE) |
-| **内容与素材**（`src/data/`、`docs/`、将来的 `assets/`） | **CC BY-NC-SA 4.0** | [LICENSE-CONTENT](LICENSE-CONTENT) |
+| **内容与素材**（`src/data/`、`docs/`、`assets/`） | **CC BY-NC-SA 4.0** | [LICENSE-CONTENT](LICENSE-CONTENT) |
 
 ### 这意味着
 
