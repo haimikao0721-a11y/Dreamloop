@@ -17,6 +17,7 @@
  */
 
 import { generateRoom, onStairs } from './dungeon.js';
+import { pushLog } from './log.js';
 import { nextFloat } from './rng.js';
 import { roomCleared } from './story.js';
 import { TILE } from './types.js';
@@ -107,6 +108,10 @@ export function descend(state: RtState, events: GameEvent[]): boolean {
     baseInterval: spawnIntervalForDepth(state.depth),
     maxAlive: maxAliveForDepth(state.depth),
   };
+
+  // 和回合制那边同一句（engine.ts）。层数写进文字里，
+  // 玩家才知道自己在往下走 —— 房间长得都差不多
+  pushLog(state, `你向下走了一层。第 ${state.depth} 层。`, 'ambient');
 
   events.push({ type: 'floorChanged', depth: state.depth });
   return true;

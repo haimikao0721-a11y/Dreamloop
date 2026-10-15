@@ -30,6 +30,7 @@ import {
   openStory,
 } from '../narrative.js';
 import { spawn } from './entities.js';
+import { pushLog } from './log.js';
 import { narrativeView } from './narrative-bridge.js';
 import { findOpenCell } from './physics.js';
 import { nextFloat } from './rng.js';
@@ -160,6 +161,10 @@ export function triggerRoomStory(state: RtState, events: GameEvent[]): void {
 
   state.roomStoryFired = true;
 
+  // 和回合制那边同一句。玩家需要一个"打完了"的确认 ——
+  // 光看敌人没了不够，那可能只是它们走出了视野
+  pushLog(state, '这里安静下来了。', 'ambient');
+
   const nodeId = pickStory(state);
   if (nodeId === null) return;
 
@@ -218,6 +223,8 @@ export function tryPickup(state: RtState, events: GameEvent[]): boolean {
     e.alive = false;
 
     if (e.itemDefId !== undefined) {
+      const def = findItem(e.itemDefId);
+      pushLog(state, `你拾起了「${def?.name ?? e.itemDefId}」。`, 'gain');
       state.inventory.push({
         uid: `i${state.nextItemUid}`,
         defId: e.itemDefId,

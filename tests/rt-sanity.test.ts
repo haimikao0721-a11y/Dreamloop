@@ -47,6 +47,7 @@ import { CRAWLER_BITE } from '../src/data/rt/actions.js';
 
 /* ── 造一份刷怪模板 ── */
 const TEMPLATE: SpawnTemplate = {
+  name: '测试怪',
   hp: 6,
   speed: 60,
   hw: 5,

@@ -142,6 +142,8 @@ export function makeAiState(cfg: {
 
 export interface Entity {
   readonly id: string;
+  /** 显示名。写日志要用 —— "你击中了爬行物"比"你击中了 e3"有意义得多 */
+  name?: string;
   readonly kind: EntityKind;
   body: Body;
   /** 朝向：【最后按的方向】，不是移动方向 —— 站定后能回头打 */
@@ -274,6 +276,8 @@ export type RtPhase = 'playing' | 'story' | 'dead';
  * 这条边界守住了，加 100 个怪不用改一行引擎代码。
  */
 export interface SpawnTemplate {
+  /** 显示名。写日志用 */
+  readonly name: string;
   readonly hp: number;
   readonly speed: number;
   readonly hw: number;

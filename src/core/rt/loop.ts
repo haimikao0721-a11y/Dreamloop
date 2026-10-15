@@ -32,6 +32,7 @@ import { calmAll, updateAi } from './ai.js';
 import { spawn, sweep } from './entities.js';
 import { burnFuel } from './light.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
+import { pushLog } from './log.js';
 import { pick } from './rng.js';
 import { SANITY_MAX, findSpawnSpot, rollSpawn, tickSanity } from './sanity.js';
 import { descend } from './progress.js';
@@ -187,6 +188,7 @@ export function cloneRtState(state: RtState): RtState {
     },
     entities: state.entities.map((e) => ({
       id: e.id,
+      name: e.name,
       kind: e.kind,
       body: { ...e.body },
       facing: { ...e.facing },
@@ -346,6 +348,33 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
     const hits = collectHits(entity, state.entities, { atk: state.atk, def: state.def });
     if (hits.length === 0) continue;
     applyHits(entity, hits);
+
+    /*
+     * 战斗文字。
+     *
+     * 【文案照抄回合制那版】—— "散开了，像被水冲掉的墨"那句是
+     * engine.ts 里原有的。两个版本读起来得是同一个人写的。
+     *
+     * 回合制那边玩家挨打【只有飘数字、没有文字】。实时版补上 ——
+     * 动作游戏里屏幕上同时在发生很多事，光一个 "-6" 玩家反应不过来
+     * 是谁打的。有了名字才知道该躲谁。
+     */
+    const fromPlayer = entity.kind === 'player';
+    for (const hit of hits) {
+      const victim = hit.target.name ?? '那东西';
+      if (fromPlayer) {
+        pushLog(
+          state,
+          !hit.target.alive
+            ? `${victim} 散开了，像被水冲掉的墨。`
+            : `你击中了 ${victim}。`,
+          hit.target.alive ? 'info' : 'gain',
+        );
+      } else {
+        const who = entity.name ?? '那东西';
+        pushLog(state, `${who} 打中了你。（-${hit.damage}）`, 'danger');
+      }
+    }
     // 击退：走了碰撞，所以撞墙就停住，不会把人推进墙里
     for (const hit of hits) {
       if (hit.knockback.x !== 0 || hit.knockback.y !== 0) {
@@ -374,6 +403,11 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
   if (san !== null) {
     if (san.justZeroed || san.justRecovered) {
       events.push({ type: 'sanity', delta: san.after - san.before, sanLeft: san.after });
+      pushLog(
+        state,
+        san.justZeroed ? '你的理智见底了。墙开始呼吸。' : '你把自己拉回来了。',
+        san.justZeroed ? 'danger' : 'gain',
+      );
     }
   }
 
@@ -388,6 +422,7 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
       if (spot !== null && tpl !== undefined) {
         spawn(state, {
           kind: 'enemy',
+          name: tpl.name,
           x: spot.x,
           y: spot.y,
           hp: tpl.hp,
@@ -421,6 +456,8 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
     pl.alive = false;
     // 玩家死了，所有敌人回 idle —— 不然尸体会继续被追
     calmAll(state.entities);
+    pushLog(state, '你倒下了。', 'danger');
+    pushLog(state, '（但梦没有结束。你只是……又醒了一次。）', 'lore');
     events.push({ type: 'died', cause: '战死' });
     endRun(state, events);
   }

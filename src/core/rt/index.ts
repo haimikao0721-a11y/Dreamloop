@@ -12,6 +12,7 @@ export * from './types.js';
 export * from './input.js';
 export * from './physics.js';
 export * from './entities.js';
+export * from './log.js';
 export * from './rng.js';
 export * from './light.js';
 export * from './sanity.js';

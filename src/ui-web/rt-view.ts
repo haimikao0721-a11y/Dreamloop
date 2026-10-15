@@ -38,6 +38,7 @@ import {
   chooseInStory,
   narrativeView,
   plantCandle,
+  pushLog,
   roomCleared,
   tryPickup,
 } from '@core/rt/index.js';
@@ -183,6 +184,30 @@ const CSS = `
   .rt-heavy.on { display: block; }
 .rt-attack:active { background: rgba(216,168,72,0.5); }
 .rt-hint { padding: 0 12px calc(env(safe-area-inset-bottom) + 10px); font-size: 11px; color: #52525f; }
+
+/*
+ * 屏幕日志。
+ *
+ * 【动作游戏里文字比数字重要】—— 飘个 "-3" 只是反馈，
+ * "护工 打中了你。" 才是叙事。而且屏幕上同时发生很多事，
+ * 光看数字玩家反应不过来是谁打的。
+ *
+ * 只显示最近几行：这是"刚才发生了什么"，不是聊天记录。
+ * 老行渐隐 —— 一眼能看出哪句是刚出现的。
+ */
+.rt-log {
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 3px; padding: 0 14px 8px; min-height: 62px;
+  font-size: 12.5px; line-height: 1.5; pointer-events: none;
+}
+.rt-log-line { color: #4a4a56; transition: color 120ms linear; }
+.rt-log-line.tone-info { color: #8a8a96; }
+.rt-log-line.tone-danger { color: #c4553a; }
+.rt-log-line.tone-gain { color: #d8a848; }
+.rt-log-line.tone-lore { color: #7a6a9a; }
+.rt-log-line.tone-ambient { color: #5a5a68; }
+/* 最新一行最亮 */
+.rt-log-line.newest { color: #d5d2ca; }
 
 /* 全屏剧情层。世界在这期间是冻住的 —— 见 story.ts 的 phase 处理 */
 .rt-story {
@@ -517,6 +542,9 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   stage.className = 'rt-stage';
   // canvas 先不建 —— 要等量完 stage 的真实尺寸才能决定画多大（见 planRoom）
 
+  const logEl = document.createElement('div');
+  logEl.className = 'rt-log';
+
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
   hintBar.textContent =
@@ -545,7 +573,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   storyInner.className = 'rt-story-inner';
   storyEl.appendChild(storyInner);
 
-  wrap.append(bar, stage, hintBar);
+  wrap.append(bar, stage, logEl, hintBar);
   root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl);
 
   const coarse = window.matchMedia('(pointer: coarse)').matches;
@@ -651,6 +679,16 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     sanDrainEvery: drainEvery,
   });
   state.spawnConfig = { ...state.spawnConfig, baseInterval: spawnInterval };
+
+  /*
+   * 开局那几句。回合制那边也是这么开的（engine.ts）——
+   * 空白的日志框会让玩家以为坏了。
+   *
+   * 用"走廊"不用"石室"：第一幕的设定是三号病区的走廊，
+   * 而回合制那版的文案写的是"石室"，和内容对不上。
+   */
+  pushLog(state, `你是${role?.name ?? '记梦者'}。`, 'lore');
+  pushLog(state, '你又在走廊开头醒了一次。这是第 1 层。', 'ambient');
   /*
    * ?san= 是【百分比】0~100。
    *
@@ -777,6 +815,34 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
 
   /** 受击闪白：命中那一帧记下位置，之后画一小段 */
   const flashes: { x: number; y: number; ttl: number }[] = [];
+
+  /**
+   * 屏幕日志。只画【最近几行】—— 这是"刚才发生了什么"，不是聊天记录。
+   *
+   * 用签名挡住重复重建：日志每帧都在变（新行进来、老行渐隐），
+   * 但内容不变的那些帧不该重排 DOM。
+   */
+  const LOG_SHOWN = 5;
+  let logSig = '';
+
+  function renderLog(): void {
+    const lines = state.logLine.slice(-LOG_SHOWN);
+    const sig = `${state.logLine.length}:${lines.map((l) => l.text).join('|')}`;
+    if (sig === logSig) return;
+    logSig = sig;
+
+    logEl.textContent = '';
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line === undefined) continue;
+      const el = document.createElement('div');
+      el.className = `rt-log-line tone-${line.tone}`;
+      // 最新一行最亮 —— 一眼看出哪句是刚出现的
+      if (i === lines.length - 1) el.classList.add('newest');
+      el.textContent = line.text;
+      logEl.appendChild(el);
+    }
+  }
 
   /**
    * 全屏剧情层。phase==='story' 时显示，选完消失。
@@ -1201,6 +1267,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
 
     render();
     renderStory();
+    renderLog();
 
     frames++;
     fpsTimer += realDt;
@@ -1291,6 +1358,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     attackBtn.remove();
     heavyBtn.remove();
     storyEl.remove();
+    logEl.remove();
     style.remove();
   };
 }

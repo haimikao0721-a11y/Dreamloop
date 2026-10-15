@@ -86,6 +86,7 @@ export const RT_ENEMIES: readonly RtEnemyDef[] = [CRAWLER, ORDERLY];
  */
 export function toSpawnTemplate(def: RtEnemyDef): SpawnTemplate {
   return {
+    name: def.name,
     hp: def.hp,
     speed: def.speed,
     hw: def.hw,

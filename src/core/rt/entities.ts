@@ -25,6 +25,8 @@ import type {
 
 export interface SpawnOptions {
   kind: EntityKind;
+  /** 显示名。写日志用 */
+  name?: string;
   x: number;
   y: number;
   hw?: number;
@@ -61,6 +63,7 @@ export function spawn(state: RtState, opts: SpawnOptions): Entity {
   const hp = opts.hp ?? 10;
   const entity: Entity = {
     id: `e${state.nextUid}`,
+    name: opts.name,
     kind: opts.kind,
     body,
     facing: opts.facing ?? { x: 1, y: 0 },
