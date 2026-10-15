@@ -54,15 +54,17 @@ describe.skipIf(!built)('构建产物结构', () => {
     expect(html, 'index.html 里出现了绝对路径，子目录部署会 404').not.toMatch(
       /(src|href)="\/(?!\/)/,
     );
-    expect(html).toMatch(/src="\.\/app\.js"/);
+    // app.js 后面会跟一个内容哈希查询串（见 vite.config.ts 的 cacheBustHtml）——
+    // 固定文件名 + max-age=600 会让浏览器缓存旧版本，加了哈希才会失效
+    expect(html).toMatch(/src="\.\/app\.js(\?v=[0-9a-f]+)?"/);
     expect(html).toContain('id="app"');
   });
 
   it('样式被打包出来且被 html 引用', () => {
     const html = readFileSync(HTML, 'utf8');
-    expect(html, 'html 里没有引用任何 css').toMatch(/href="\.\/[^"]+\.css"/);
+    expect(html, 'html 里没有引用任何 css').toMatch(/href="\.\/[^"]+\.css(\?v=[0-9a-f]+)?"/);
 
-    const cssMatch = /href="\.\/([^"]+\.css)"/.exec(html);
+    const cssMatch = /href="\.\/([^"]+\.css)(?:\?v=[0-9a-f]+)?"/.exec(html);
     const cssFile = cssMatch?.[1];
     expect(cssFile).toBeDefined();
     if (cssFile === undefined) return;
