@@ -1,0 +1,24 @@
+{
+  "name": "dreamloop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "梦境循环 —— 文字肉鸽。一层层往下走，每次变强都要拿理智去换。",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "validate": "vitest run tests/content.test.ts",
+    "verify": "tsc --noEmit && vite build && vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "happy-dom": "^21.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

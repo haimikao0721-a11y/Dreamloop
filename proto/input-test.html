@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- viewport-fit=cover: 适配 iPhone 刘海/灵动岛; user-scalable=no: 游戏不该能缩放 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0a0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>梦境循环 · 输入层原型</title>
+<style>
+/* ============================================================
+   基础重置 —— 手机上有 5 个默认行为必须干掉
+   ============================================================ */
+:root {
+  --bg:      #0a0a0c;
+  --panel:   #14141a;
+  --fg:      #c8c6c0;
+  --dim:     #5a5854;
+  --accent:  #d8b25c;
+  --danger:  #b8443c;
+  --wall:    #2a2a33;
+  --radius:  10px;
+  --cell:    min(9vw, 44px);   /* 随屏宽自适应，桌面端封顶 */
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;  /* ① 点按蓝色高亮 */
+  -webkit-touch-callout: none;               /* ② 长按弹出"拷贝/查询"菜单 */
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;                 /* ③ 下拉刷新 / 边缘回弹 */
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", monospace;
+  -webkit-user-select: none;
+  user-select: none;                         /* ④ 拖动选中文字 */
+  touch-action: manipulation;                /* ⑤ 双击缩放 */
+}
+
+/* ============================================================
+   布局 —— 100dvh 而非 100vh（手机地址栏收放时 vh 会算错）
+   ============================================================ */
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  height: 100dvh;
+  /* 刘海屏 / 手势条安全区 */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ---------- 状态栏 ---------- */
+#status {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid #222;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.bar { display: flex; align-items: center; gap: 6px; }
+.bar-track {
+  width: 72px; height: 6px;
+  background: #000; border-radius: 3px; overflow: hidden;
+}
+.bar-fill { height: 100%; transition: width .25s ease; }
+#hp-fill  { background: var(--danger); }
+#san-fill { background: #6a8caf; }
+
+/* ---------- 地图 ---------- */
+#stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 8px;
+}
+#map {
+  display: grid;
+  gap: 2px;
+  touch-action: none;          /* ← 关键！不写的话浏览器会抢走拖动做滚动 */
+  user-select: none;
+  border-radius: var(--radius);
+}
+.cell {
+  width: var(--cell);
+  height: var(--cell);
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--cell) * 0.55);
+  line-height: 1;
+  border-radius: 3px;
+  background: #101015;
+  color: var(--dim);
+  transition: background .1s;
+  cursor: pointer;
+}
+.cell.floor  { background: #16161d; }
+.cell.wall   { background: var(--wall); color: #44444f; }
+.cell.player { background: #1c2436; color: #7fb0ff; }
+.cell.enemy  { background: #241618; color: var(--danger); }
+.cell.item   { background: #24201a; color: var(--accent); animation: pulse 2s infinite; }
+.cell.adjacent { box-shadow: inset 0 0 0 1px #2f3a4d; }  /* 提示可走 */
+@keyframes pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(216,178,92,.4); }
+  50%     { box-shadow: 0 0 0 5px rgba(216,178,92,0); }
+}
+
+/* ---------- 日志 ---------- */
+#log {
+  height: 68px;
+  overflow-y: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  background: var(--panel);
+  border-top: 1px solid #222;
+  -webkit-overflow-scrolling: touch;
+}
+#log div { color: var(--dim); }
+#log div:last-child { color: var(--fg); }
+
+/* ---------- 控制区 ---------- */
+#controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 10px 12px 12px;
+  background: var(--panel);
+  border-top: 1px solid #222;
+  min-height: 132px;
+}
+
+/* 十字方向键 */
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 46px);
+  grid-template-rows: repeat(3, 46px);
+  gap: 4px;
+  touch-action: none;          /* ← 同样必须 */
+}
+.dpad-btn {
+  display: grid;
+  place-items: center;
+  background: #1e1e26;
+  border: 1px solid #2c2c38;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 17px;
+  cursor: pointer;
+  transition: background .08s, transform .08s;
+}
+.dpad-btn:active,
+.dpad-btn.held { background: var(--accent); color: #000; transform: scale(.94); }
+.dpad-btn[data-dir="up"]    { grid-area: 1 / 2; }
+.dpad-btn[data-dir="left"]  { grid-area: 2 / 1; }
+.dpad-btn[data-dir="down"]  { grid-area: 3 / 2; }
+.dpad-btn[data-dir="right"] { grid-area: 2 / 3; }
+#dpad-wait {
+  grid-area: 2 / 2;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* 右侧功能键 */
+#actions { display: flex; flex-direction: column; gap: 6px; }
+.act-btn {
+  min-width: 62px;
+  padding: 9px 12px;
+  background: #1e1e26;
+  border: 1px solid #2c2c38;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.act-btn:active { background: var(--accent); color: #000; }
+
+/* ============================================================
+   全屏剧情层 —— 你要的"清房间掉叙事物件 → 全屏文字"
+   ============================================================ */
+#story {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 26px;
+  padding: calc(env(safe-area-inset-top) + 28px) 26px
+           calc(env(safe-area-inset-bottom) + 28px);
+  background: rgba(6,6,9,.97);
+  backdrop-filter: blur(4px);
+  animation: fadeIn .4s ease;
+}
+#story.show { display: flex; }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+#story-text {
+  font-size: clamp(15px, 4.2vw, 19px);
+  line-height: 2.05;
+  letter-spacing: .02em;
+  max-width: 640px;
+  margin: 0 auto;
+  color: #d5d2ca;
+}
+#story-text .quote {
+  display: block;
+  margin-top: 18px;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent);
+  font-style: italic;
+}
+#story-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+}
+.choice {
+  padding: 15px 18px;
+  background: #16161d;
+  border: 1px solid #2c2c38;
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.choice:hover  { border-color: var(--accent); }
+.choice:active { background: var(--accent); color: #000; }
+.choice .tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.choice:active .tag { border-color: #000; color: #000; }
+
+/* ============================================================
+   诊断面板 —— 手机上看检测结果（原型专用）
+   ============================================================ */
+#diag {
+  position: fixed;
+  top: 0; right: 0;
+  z-index: 200;
+  width: min(320px, 88vw);
+  max-height: 100dvh;
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 14px) 14px 14px;
+  background: rgba(10,10,14,.97);
+  border-left: 1px solid #2c2c38;
+  font-size: 11.5px;
+  line-height: 1.75;
+  transform: translateX(100%);
+  transition: transform .22s ease;
+}
+#diag.show { transform: translateX(0); }
+#diag h3 { font-size: 12px; color: var(--accent); margin-bottom: 6px; }
+#diag .row { display: flex; justify-content: space-between; gap: 10px; }
+#diag .k { color: var(--dim); }
+#diag .v { color: var(--fg); text-align: right; word-break: break-all; }
+#diag .ok  { color: #5aa06a; }
+#diag .no  { color: #8a5a5a; }
+#diag hr { border: none; border-top: 1px solid #222; margin: 10px 0; }
+#diag select {
+  width: 100%; padding: 7px;
+  background: #1e1e26; color: var(--fg);
+  border: 1px solid #2c2c38; border-radius: 6px;
+  font-family: inherit; font-size: 12px; margin-top: 4px;
+  -webkit-appearance: none; appearance: none;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 状态栏 -->
+  <div id="status">
+    <div class="bar"><span>HP</span>
+      <div class="bar-track"><div class="bar-fill" id="hp-fill" style="width:100%"></div></div>
+    </div>
+    <div class="bar"><span>理智</span>
+      <div class="bar-track"><div class="bar-fill" id="san-fill" style="width:100%"></div></div>
+    </div>
+    <div class="bar" style="margin-left:auto">
+      <span class="k" style="color:var(--dim)">输入</span>
+      <strong id="mode-label" style="color:var(--accent)">—</strong>
+    </div>
+  </div>
+
+  <!-- 地图 -->
+  <div id="stage"><div id="map"></div></div>
+
+  <!-- 日志 -->
+  <div id="log"></div>
+
+  <!-- 控制区 -->
+  <div id="controls">
+    <div id="dpad">
+      <button class="dpad-btn" data-dir="up">↑</button>
+      <button class="dpad-btn" data-dir="left">←</button>
+      <button class="dpad-btn" id="dpad-wait">等待</button>
+      <button class="dpad-btn" data-dir="right">→</button>
+      <button class="dpad-btn" data-dir="down">↓</button>
+    </div>
+    <div id="actions">
+      <button class="act-btn" id="btn-diag">诊断</button>
+      <button class="act-btn" id="btn-story">剧情</button>
+      <button class="act-btn" id="btn-reset">重开</button>
+    </div>
+  </div>
+</div>
+
+<!-- 全屏剧情层 -->
+<div id="story">
+  <div id="story-text"></div>
+  <div id="story-choices"></div>
+</div>
+
+<!-- 诊断面板 -->
+<div id="diag">
+  <h3>环境探针</h3>
+  <div id="diag-body"></div>
+  <hr>
+  <h3>输入模式（手动覆盖）</h3>
+  <select id="mode-select">
+    <option value="auto">自动检测</option>
+    <option value="touch">强制触摸</option>
+    <option value="keyboard">强制键盘</option>
+    <option value="gamepad">强制手柄</option>
+  </select>
+  <div style="color:var(--dim);margin-top:8px">
+    最后事件：<span id="last-event" style="color:var(--fg)">—</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════
+   ① 环境探针 —— 检测的是"能力"和"输入方式"，不是"设备型号"
+   ══════════════════════════════════════════════════════════════ */
+const mq = q => window.matchMedia(q).matches;
+
+function probeEnvironment() {
+  return {
+    "pointer: coarse":   mq("(pointer: coarse)"),
+    "pointer: fine":     mq("(pointer: fine)"),
+    "any-pointer: coarse": mq("(any-pointer: coarse)"),
+    "hover: hover":      mq("(hover: hover)"),
+    "maxTouchPoints":    navigator.maxTouchPoints || 0,
+    "视口":              `${innerWidth}×${innerHeight}`,
+    "DPR":               devicePixelRatio,
+    "dvh 支持":          CSS.supports("height", "100dvh"),
+    "Pointer Events":    !!window.PointerEvent,
+    "震动 API":          !!navigator.vibrate,
+    "手柄 API":          !!navigator.getGamepads,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ② 意图层 —— 所有输入源都产出 Intent，游戏逻辑只认 Intent
+   ══════════════════════════════════════════════════════════════ */
+const DIRS = { up:{x:0,y:-1}, down:{x:0,y:1}, left:{x:-1,y:0}, right:{x:1,y:0} };
+const I = {
+  move:    dir   => ({ type:"move", dir }),
+  wait:    ()    => ({ type:"wait" }),
+  choose:  index => ({ type:"choose", index }),
+  cancel:  ()    => ({ type:"cancel" }),
+};
+
+/* ══════════════════════════════════════════════════════════════
+   ③ 游戏状态（真实项目里这段会搬进 core/，零 DOM 依赖）
+   ══════════════════════════════════════════════════════════════ */
+const MAP = [
+  "#########",
+  "#...#...#",
+  "#.#.#.#.#",
+  "#...#...#",
+  "#.#.#.#.#",
+  "#...#...#",
+  "#.#.#.#.#",
+  "#......@#",
+  "#########",
+].join("\n").trim().split("\n").map(r => r.split(""));
+
+// 手工放置实体
+const ITEMS  = { "7,1": { glyph:"书", name:"残破的手记" } };   // 叙事物件
+const ENEMIES= { "5,3": { glyph:"g", name:"哥布林" },
+                 "3,7": { glyph:"g", name:"哥布林" } };
+
+let state;
+
+function initState() {
+  state = { px:7, py:7, hp:100, hpMax:100, san:100, sanMax:100,
+            flags:{}, storyOpen:false, bookRead:false };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ④ 渲染
+   ══════════════════════════════════════════════════════════════ */
+const $map = document.getElementById("map");
+const $log = document.getElementById("log");
+const $hp  = document.getElementById("hp-fill");
+const $san = document.getElementById("san-fill");
+
+$map.style.gridTemplateColumns = `repeat(${MAP[0].length}, var(--cell))`;
+
+function render() {
+  $map.innerHTML = "";
+  for (let y = 0; y < MAP.length; y++) {
+    for (let x = 0; x < MAP[y].length; x++) {
+      const d = document.createElement("div");
+      d.className = "cell";
+      const wall = MAP[y][x] === "#";
+      const isPlayer = (x === state.px && y === state.py);
+      const item = ITEMS[`${x},${y}`];
+      const enemy = ENEMIES[`${x},${y}`];
+
+      if (isPlayer)      { d.classList.add("player"); d.textContent = "@"; }
+      else if (wall)     { d.classList.add("wall");   d.textContent = "▓"; }
+      else {
+        d.classList.add("floor");
+        // 只显示"相邻"信息（模拟视野限制）
+        const adj = Math.abs(x-state.px) <= 1 && Math.abs(y-state.py) <= 1;
+        if (adj && item)  { d.classList.add("item");  d.textContent = item.glyph; }
+        else if (adj && enemy){ d.classList.add("enemy"); d.textContent = enemy.glyph; }
+        else if (adj)     { d.classList.add("adjacent"); d.textContent = "·"; }
+        else              { d.textContent = " "; }
+      }
+      d.dataset.x = x; d.dataset.y = y;
+      $map.appendChild(d);
+    }
+  }
+  $hp.style.width  = (state.hp  / state.hpMax  * 100) + "%";
+  $san.style.width = (state.san / state.sanMax * 100) + "%";
+}
+
+function logLine(text) {
+  const d = document.createElement("div");
+  d.textContent = "› " + text;
+  $log.appendChild(d);
+  while ($log.children.length > 40) $log.removeChild($log.firstChild);
+  $log.scrollTop = $log.scrollHeight;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ⑤ 核心调度 —— 唯一处理 Intent 的地方
+   ══════════════════════════════════════════════════════════════ */
+function dispatch(intent) {
+  if (state.storyOpen) {
+    if (intent.type === "choose") resolveChoice(intent.index);
+    else if (intent.type === "cancel") closeStory();
+    return;
+  }
+
+  switch (intent.type) {
+    case "move": {
+      const d = DIRS[intent.dir];
+      if (!d) return;
+      const nx = state.px + d.x, ny = state.py + d.y;
+      if (MAP[ny]?.[nx] === undefined || MAP[ny][nx] === "#") {
+        buzz(8); logLine("那边是墙。");
+        return;
+      }
+      state.px = nx; state.py = ny;
+      buzz(6);
+      step();
+      break;
+    }
+    case "wait":  logLine("你屏住呼吸，听了一会儿。"); buzz(4); break;
+    case "cancel": logLine("（没有可取消的操作）"); break;
+  }
+  render();
+}
+
+function step() {
+  const key = `${state.px},${state.py}`;
+
+  const enemy = ENEMIES[key];
+  if (enemy) {
+    logLine(`${enemy.name} 扑了上来。`);
+    state.hp -= 18; state.san -= 6;
+    delete ENEMIES[key];
+    return;
+  }
+
+  const item = ITEMS[key];
+  if (item) {
+    logLine(`你拾起了「${item.name}」。`);
+    delete ITEMS[key];
+    if (!state.bookRead) { openStory(item.name); return; }
+    return;
+  }
+
+  // 低理智时的文字反馈 —— 这就是"用文字代替数字"
+  if (state.san < 40 && Math.random() < .35) {
+    logLine("墙上的影子比刚才多了一个。");
+    state.san -= 2;
+  } else {
+    logLine("你向前走了一步。");
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ⑥ 全屏剧情 + 选项 + flag  —— 你要的核心链路
+   ══════════════════════════════════════════════════════════════ */
+const $story   = document.getElementById("story");
+const $sText   = document.getElementById("story-text");
+const $sChoice = document.getElementById("story-choices");
+
+// 剧情用数据描述（真实项目里这是 data/story/*.yaml）
+const STORY_NODES = {
+  book: {
+    text: `纸页一碰就碎。上面只剩下几行字——<span class="quote">"第七次醒来时，
+           你会发现门从来没有锁过。锁着的是你。"</span>`,
+    choices: [
+      { text:"把这句话记下来",        tag:"学者", flag:"know_true_name", san:-10, next:null },
+      { text:"合上，当没看见",        flag:"ignored_warning", san:0,  next:null },
+      { text:"撕碎它，烧掉",          flag:"burned_book",     san:-5, next:null },
+    ],
+  },
+};
+
+let currentNode = null;
+
+function openStory(itemName) {
+  currentNode = STORY_NODES.book;
+  state.storyOpen = true;
+  $sText.innerHTML = currentNode.text;
+  $sChoice.innerHTML = "";
+  currentNode.choices.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "choice";
+    // tag 门控：真实项目里由角色 tags 决定显示与否
+    b.innerHTML = c.text + (c.tag ? `<span class="tag">${c.tag}</span>` : "");
+    b.addEventListener("click", () => dispatch(I.choose(i)));
+    $sChoice.appendChild(b);
+  });
+  $story.classList.add("show");
+  buzz(15);
+}
+
+function resolveChoice(i) {
+  const c = currentNode.choices[i];
+  if (c.flag) state.flags[c.flag] = true;
+  if (c.san)  state.san = Math.max(0, state.san + c.san);
+  logLine(`你选择了：${c.text}　（flag: ${c.flag || "无"}）`);
+  if (state.san <= 0) logLine("你的理智见底了。世界开始融化。");
+  state.bookRead = true;
+  closeStory();
+}
+
+function closeStory() {
+  state.storyOpen = false;
+  $story.classList.remove("show");
+  render();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ⑦ 输入适配器 —— 每个都只做一件事：把原生事件翻译成 Intent
+   ══════════════════════════════════════════════════════════════ */
+
+/* ---- 适配器 A：键盘 ---- */
+const KEYMAP = {
+  ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right",
+  w:"up", s:"down", a:"left", d:"right",
+  W:"up", S:"down", A:"left", D:"right",
+  " ":"wait", ".":"wait", Escape:"cancel",
+};
+addEventListener("keydown", e => {
+  noteEvent("keydown " + e.key);
+  setMode("keyboard", true);
+  // 剧情打开时：数字键 1-9 直接选选项
+  if (state.storyOpen) {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 9) { dispatch(I.choose(n - 1)); e.preventDefault(); }
+    else if (e.key === "Escape") { dispatch(I.cancel()); e.preventDefault(); }
+    return;
+  }
+  const dir = KEYMAP[e.key];
+  if (dir === "wait")   { dispatch(I.wait());   e.preventDefault(); }
+  else if (dir === "cancel") { dispatch(I.cancel()); e.preventDefault(); }
+  else if (dir)         { dispatch(I.move(dir)); e.preventDefault(); }
+});
+
+/* ---- 适配器 B：地图（点击相邻格 + 滑动手势）---- */
+let ptr = null;
+
+$map.addEventListener("pointerdown", e => {
+  if (state.storyOpen) return;
+  noteEvent(`pointerdown (${e.pointerType})`);
+  ptr = { x:e.clientX, y:e.clientY, t:Date.now(), id:e.pointerId, moved:false };
+  // 手指移出元素也不丢事件 —— 不加这个，滑动会"卡住"
+  $map.setPointerCapture(e.pointerId);
+});
+
+$map.addEventListener("pointermove", e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y) > 12) ptr.moved = true;
+});
+
+$map.addEventListener("pointerup", e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (e.pointerType === "touch") setMode("touch", true);
+
+  const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
+  const dist = Math.hypot(dx, dy);
+  const wasMoved = ptr.moved;
+  ptr = null;
+  if (state.storyOpen) return;
+
+  if (dist > 28) {
+    // —— 滑动手势：取主轴方向
+    const dir = Math.abs(dx) > Math.abs(dy)
+      ? (dx > 0 ? "right" : "left")
+      : (dy > 0 ? "down"  : "up");
+    dispatch(I.move(dir));
+    return;
+  }
+
+  // —— 点击：只有"相邻格"可走（没移动过才算点击）
+  if (!wasMoved) {
+    const cell = e.target.closest(".cell");
+    if (!cell) return;
+    const x = +cell.dataset.x, y = +cell.dataset.y;
+    const ddx = x - state.px, ddy = y - state.py;
+    if (Math.abs(ddx) + Math.abs(ddy) === 1) {
+      dispatch(I.move(ddx === 1 ? "right" : ddx === -1 ? "left" : ddy === 1 ? "down" : "up"));
+    } else if (ddx === 0 && ddy === 0) {
+      dispatch(I.wait());
+    } else {
+      logLine("太远了，只能走到相邻的格子。");
+    }
+  }
+});
+
+$map.addEventListener("pointercancel", () => { ptr = null; });
+
+// 桌面端右键 = 取消（触屏没有右键，所以不能只靠它）
+$map.addEventListener("contextmenu", e => { e.preventDefault(); dispatch(I.cancel()); });
+
+/* ---- 适配器 C：虚拟方向键（Pointer Events + 按住连发）---- */
+let repeatTimer = null, repeatDelay = null;
+
+function bindHold(btn, onFire) {
+  let held = false;
+
+  btn.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    noteEvent(`dpad pointerdown (${e.pointerType})`);
+    if (e.pointerType === "touch") setMode("touch", true);
+    btn.setPointerCapture(e.pointerId);
+    btn.classList.add("held");
+    held = true;
+    onFire();
+    // 长按连发：先等 320ms，之后每 110ms 一步
+    repeatDelay = setTimeout(() => {
+      repeatTimer = setInterval(() => { if (held) onFire(); }, 110);
+    }, 320);
+  });
+
+  const stop = e => {
+    if (!held) return;
+    held = false;
+    btn.classList.remove("held");
+    clearTimeout(repeatDelay);
+    clearInterval(repeatTimer);
+    repeatDelay = repeatTimer = null;
+  };
+  btn.addEventListener("pointerup", stop);
+  btn.addEventListener("pointercancel", stop);
+  btn.addEventListener("pointerleave", stop);
+  btn.addEventListener("lostpointercapture", stop);
+}
+
+document.querySelectorAll(".dpad-btn[data-dir]").forEach(btn => {
+  bindHold(btn, () => dispatch(I.move(btn.dataset.dir)));
+});
+bindHold(document.getElementById("dpad-wait"), () => dispatch(I.wait()));
+
+/* ---- 适配器 D：手柄（很多桌面玩家会用）---- */
+let padPrev = {};
+function pollGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const p of pads) {
+    if (!p) continue;
+    const ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
+    const btn = i => p.buttons[i]?.pressed;
+    const now = { up:ay<-0.5, down:ay>0.5, left:ax<-0.5, right:ax>0.5 };
+
+    for (const k of ["up","down","left","right"]) {
+      if (now[k] && !padPrev[k]) { setMode("gamepad", true); dispatch(I.move(k)); }
+    }
+    padPrev = now;
+
+    if (btn(0) && !padPrev.a) { setMode("gamepad", true); dispatch(I.wait()); }
+    padPrev.a = btn(0);
+  }
+  requestAnimationFrame(pollGamepad);
+}
+addEventListener("gamepadconnected", e => {
+  noteEvent("gamepadconnected: " + e.gamepad.id);
+  setMode("gamepad");
+});
+requestAnimationFrame(pollGamepad);
+
+/* ══════════════════════════════════════════════════════════════
+   ⑧ 输入模式判定 —— 自动检测只设默认值，玩家可手动锁定
+   ══════════════════════════════════════════════════════════════ */
+const $modeLabel = document.getElementById("mode-label");
+const $modeSel   = document.getElementById("mode-select");
+const $lastEv    = document.getElementById("last-event");
+
+let modeLocked = null;     // null = 自动；否则为锁定的模式
+
+function detectDefaultMode() {
+  const env = probeEnvironment();
+  // 主指针是粗的 + 真有触摸点 → 触摸
+  if (env["pointer: coarse"] && env["maxTouchPoints"] > 0) return "touch";
+  return "keyboard";
+}
+
+function setMode(mode, auto = false) {
+  // 自动切换只在"没被手动锁定"时生效，且不能覆盖更具体的输入
+  if (auto && modeLocked) return;
+  if (!auto) modeLocked = (mode === "auto") ? null : mode;
+  if (auto && currentMode() === mode) return;
+
+  const eff = modeLocked ?? detectDefaultMode();
+  const label = { touch:"触摸", keyboard:"键盘", gamepad:"手柄" }[eff] ?? eff;
+  $modeLabel.textContent = label;
+
+  // 触摸模式才显示方向键；键盘/手柄模式下藏起来让位给地图
+  const $c = document.getElementById("controls");
+  $c.style.opacity = (eff === "touch") ? "1" : ".45";
+}
+
+function currentMode() {
+  return modeLocked ?? detectDefaultMode();
+}
+
+$modeSel.addEventListener("change", () => {
+  setMode($modeSel.value);
+  logLine(`输入模式切换为：${$modeSel.value}`);
+});
+
+$modeSel.value = "auto";
+
+function noteEvent(t) { $lastEv.textContent = t; }
+
+/* 震动反馈（仅 Android；iOS Safari 不支持 navigator.vibrate）*/
+function buzz(ms) {
+  if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (_) {} }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ⑨ 诊断面板 + 按钮
+   ══════════════════════════════════════════════════════════════ */
+const $diag = document.getElementById("diag");
+document.getElementById("btn-diag").addEventListener("click", () => {
+  $diag.classList.toggle("show");
+  renderDiag();
+});
+document.getElementById("btn-story").addEventListener("click", () => {
+  if (!state.storyOpen) openStory("残破的手记");
+});
+document.getElementById("btn-reset").addEventListener("click", () => {
+  location.reload();
+});
+// 点诊断面板外部关闭
+document.addEventListener("pointerdown", e => {
+  if ($diag.classList.contains("show") &&
+      !$diag.contains(e.target) &&
+      e.target.id !== "btn-diag") {
+    $diag.classList.remove("show");
+  }
+}, true);
+
+function renderDiag() {
+  const env = probeEnvironment();
+  const bool = v => v ? `<span class="ok">是</span>` : `<span class="no">否</span>`;
+  let html = "";
+  for (const [k, v] of Object.entries(env)) {
+    html += `<div class="row"><span class="k">${k}</span><span class="v">${
+      typeof v === "boolean" ? bool(v) : v
+    }</span></div>`;
+  }
+  html += `<hr><div class="row"><span class="k">判定模式</span><span class="v" style="color:var(--accent)">${
+    { touch:"触摸", keyboard:"键盘", gamepad:"手柄" }[currentMode()]
+  }</span></div>`;
+  html += `<div class="row"><span class="k">锁定状态</span><span class="v">${
+    modeLocked ? "已手动锁定" : "自动"
+  }</span></div>`;
+  document.getElementById("diag-body").innerHTML = html;
+}
+
+// 视口变化时刷新（手机横竖屏切换 / 地址栏收放）
+addEventListener("resize", () => { if ($diag.classList.contains("show")) renderDiag(); });
+addEventListener("orientationchange", () => setTimeout(renderDiag, 200));
+
+/* ══════════════════════════════════════════════════════════════
+   ⑩ 启动
+   ══════════════════════════════════════════════════════════════ */
+initState();
+render();
+setMode("auto");
+logLine("你在一个不认识的房间里醒来。");
+logLine("方向键 / WASD / 点相邻格 / 滑动 —— 都能走。");
+logLine("去找那本「残破的手记」。");
+logLine(`自动判定输入模式：${$modeLabel.textContent}（右上角可手动改）`);
+</script>
+</body>
+</html>

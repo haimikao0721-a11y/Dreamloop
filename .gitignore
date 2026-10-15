@@ -1,0 +1,37 @@
+# ── 依赖 ──
+node_modules/
+.pnpm-store/
+
+# ── 构建产物 ──
+# dist/ 是可再生的：任何人 clone 后跑 pnpm build 就能得到同样的东西。
+# 而且它有固定文件名（见 vite.config.ts），提交进去只会在每次构建后产生噪音 diff。
+dist/
+
+# ── 测试与工具缓存 ──
+coverage/
+.vite/
+.vitest/
+*.tsbuildinfo
+
+# ── 临时验证目录（部署模拟、本地试验）──
+.deploy-test/
+.uicheck/
+
+# ── 编辑器 / 系统 ──
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 日志 ──
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ── 本地环境变量 ──
+.env
+.env.local
+.env.*.local

@@ -1,0 +1,4 @@
+# pnpm 11 起，构建脚本白名单在这里配置（package.json 的 "pnpm" 字段已不再读取）。
+# esbuild 需要跑 postinstall 下载平台二进制，不批准的话 vite / vitest 都起不来。
+allowBuilds:
+  esbuild: true
