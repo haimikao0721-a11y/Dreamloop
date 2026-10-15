@@ -119,6 +119,29 @@ export function pickScale(s: number): number {
   const whole = Math.floor(s);
   return whole / s >= 0.85 ? whole : s;
 }
+/**
+ * 按【可用空间】规划房间 —— 和 planRoom 的区别是不再自己减界面占位。
+ *
+ * 【为什么需要这个】planRoom 收的是视口尺寸，然后减掉一堆估算的
+ * 界面高度（状态栏、日志、提示）。那些估算【必然会过期】——
+ * 加个日志栏就漏了一次，加左右侧栏又漏一次。
+ *
+ * 而这个函数收的是【舞台的实测尺寸】：界面怎么改都对，
+ * 因为量的是改完之后的结果，不是改之前的猜测。
+ */
+export function planRoomForWorld(availW: number, availH: number): RoomPlan {
+  const w = Math.max(120, availW);
+  const h = Math.max(120, availH);
+  for (let scale = 6; scale >= 1; scale--) {
+    const cols = Math.floor(w / (TILE * scale));
+    const rows = Math.floor(h / (TILE * scale));
+    if (cols >= MIN_COLS && rows >= MIN_ROWS) {
+      return { cols: Math.min(cols, MAX_COLS), rows: Math.min(rows, MAX_ROWS), scale };
+    }
+  }
+  return { cols: MIN_COLS, rows: MIN_ROWS, scale: 1 };
+}
+
 export function planRoom(viewportW: number, viewportH: number): RoomPlan {
   // 留一点余量：视口尺寸和实际可用空间不一定完全一致
   // （安全区、滚动条、状态栏估错），宁可房间小一号也不要溢出
@@ -222,7 +245,11 @@ const CSS = `
   display: flex; align-items: center; justify-content: center;
   color: #2c2c38; font-size: 11px; letter-spacing: 0.1em;
 }
-.rt-stage { display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
+.rt-stage {
+  position: relative;   /* 摇杆和按钮挂在这上面，不是挂在视口上 */
+  display: flex; align-items: center; justify-content: center;
+  min-height: 0; min-width: 0;
+}
 .rt-stage canvas {
   image-rendering: pixelated; image-rendering: crisp-edges; display: block;
 }
@@ -251,26 +278,31 @@ const CSS = `
  * 但【不强制】：玩家想竖着玩就竖着玩，给一个按钮能关掉。
  * 强制转屏在浏览器里也做不到（没有屏幕方向锁的权限）。
  */
-.rt-rotate {
-  position: fixed; inset: 0; z-index: 400; display: none;
-  background: #07070b;
-  flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  text-align: center; padding: 32px;
-}
-/* 只在【竖屏 + 触屏】时出现。由 JS 加 .show */
-.rt-rotate.show { display: flex; }
-.rt-rotate-icon { font-size: 44px; color: #d8a848; transform: rotate(90deg); }
-.rt-rotate-text { font-size: 15px; line-height: 1.9; color: #8a8a96; }
-.rt-rotate-text b { color: #d5d2ca; font-weight: normal; }
-.rt-rotate button {
-  padding: 9px 20px; background: #16161d; border: 1px solid #2c2c38;
-  border-radius: 6px; color: #6b6b7a; font-family: inherit; font-size: 12.5px;
-  cursor: pointer;
-}
-.rt-rotate button:hover { border-color: #d8a848; color: #b9b9c4; }
+/*
+ * 竖屏提示。原来是一块【全屏遮罩】，删了。
+ *
+ * 用户的设备没有感应、转不了屏 —— 于是那个提示变成
+ * "要求玩家做一件他做不到的事"，而且挡住整个游戏。
+ *
+ * 现在只是状态栏里的一句话，竖屏触屏时才出现，不挡任何东西。
+ * 能转屏的玩家照样能看见，转不了的也不受影响。
+ */
+.rt-portrait-tip { display: none; color: #6b6b7a; }
+/*
+ * 窄屏藏掉调试信息（房 / 视口 / 敌人坐标）。
+ * 手机上那一行会折成两三行，把游戏挤小 —— 而它只有开发时有用。
+ */
+@media (max-width: 640px) { .rt-debug { display: none; } }
+.rt-wrap.portrait-touch .rt-portrait-tip { display: inline; }
 .rt-wheel {
-  position: fixed; left: calc(env(safe-area-inset-left) + 18px);
-  bottom: calc(env(safe-area-inset-bottom) + 18px);
+  /*
+   * 【挂在游戏区上，不是挂在视口上】—— 原来是 fixed + bottom:18px，
+   * 正好压在日志栏和提示栏上面。
+   *
+   * 而且挂在游戏区上才是手机动作游戏的标准做法：
+   * 拇指够得着，又不会挡到别的内容。
+   */
+  position: absolute; left: 14px; bottom: 14px;
   width: 132px; height: 132px; border-radius: 50%;
   border: 2px solid #2c2c38; background: rgba(22,22,29,0.45);
   display: none; touch-action: none;
@@ -298,8 +330,7 @@ const CSS = `
 .rt-attack.on { display: block; }
   /* 重击：小一圈、放在轻击左上方 —— 拇指够得着，又不会误触 */
   .rt-heavy {
-    position: fixed; right: calc(env(safe-area-inset-right) + 118px);
-    bottom: calc(env(safe-area-inset-bottom) + 62px);
+    position: absolute; right: 110px; bottom: 52px;
     width: 62px; height: 62px; border-radius: 50%;
     border: 2px solid #4a3a2c; background: rgba(224,120,72,0.2);
     color: #e07848; font-family: inherit; font-size: 13px;
@@ -689,13 +720,17 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   // 先填上 —— fps 要半秒后才算得出来，空着的话屏幕上就是一片空白，
   // 看起来像坏了
   stat.innerHTML = '<b>--</b> fps &nbsp; tick <b>0</b>';
+  const portraitTip = document.createElement('span');
+  portraitTip.className = 'rt-portrait-tip';
+  portraitTip.textContent = '· 横屏空间更大';
+
   const hint = document.createElement('span');
   hint.className = 'keys';
   hint.innerHTML = 'WASD 移动 &nbsp;·&nbsp; <b>空格 / J</b> 轻击 &nbsp;·&nbsp; <b>K</b> 重击 &nbsp;·&nbsp; <b>E</b> 交互';
   const exitBtn = document.createElement('button');
   exitBtn.type = 'button';
   exitBtn.textContent = '返回主菜单';
-  bar.append(stat, hint, exitBtn);
+  bar.append(stat, portraitTip, hint, exitBtn);
 
   /*
    * 【左右两栏现在就建好，只是宽度是 0】——
@@ -756,24 +791,11 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   storyInner.className = 'rt-story-inner';
   storyEl.appendChild(storyInner);
 
-  /* 转屏提示 —— 只在竖屏触屏设备上出现，可以关掉 */
-  const rotateEl = document.createElement('div');
-  rotateEl.className = 'rt-rotate';
-  const rotIcon = document.createElement('div');
-  rotIcon.className = 'rt-rotate-icon';
-  rotIcon.textContent = '▭';
-  const rotText = document.createElement('div');
-  rotText.className = 'rt-rotate-text';
-  rotText.innerHTML =
-    '<b>横过手机</b><br>这是个靠左右走位躲招的游戏，' +
-    '<br>竖屏的横向空间不够躲。';
-  const rotBtn = document.createElement('button');
-  rotBtn.type = 'button';
-  rotBtn.textContent = '继续竖屏玩';
-  rotateEl.append(rotIcon, rotText, rotBtn);
 
   wrap.append(bar, midEl, logRow, hintBar);
-  root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl, rotateEl);
+  root.append(style, wrap, storyEl);
+  // 控件挂进游戏区 —— CSS 里也是相对它定位的
+  stage.append(wheel, attackBtn, heavyBtn);
 
   /*
    * 【触屏才显示摇杆和按钮】
@@ -789,42 +811,46 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   }
 
   /*
-   * 转屏提示：只在【触屏 + 竖屏】时弹。
+   * 竖屏提示：只在【触屏 + 竖屏】时在状态栏露一句话。
    *
-   * 关掉之后记在 sessionStorage 里 —— 玩家已经表态过一次了，
-   * 转来转去再弹就是骚扰。但只记这一场（不是 localStorage）：
-   * 下次打开重新问一次是合理的，因为他可能换了设备方向。
+   * 原来是一块全屏遮罩，删了 —— 用户的设备没有感应、转不了屏，
+   * 那个提示就变成"要求玩家做一件他做不到的事"，还挡住整个游戏。
+   *
+   * 现在只加一个 class，由 CSS 决定显不显示，不挡任何东西。
    */
-  const ROTATE_KEY = 'dreamloop.rt.portrait-ok';
-  const wantsLandscape = (): boolean =>
-    coarse && window.innerHeight > window.innerWidth;
-
-  function syncRotateHint(): void {
-    let dismissed = false;
-    try {
-      dismissed = sessionStorage.getItem(ROTATE_KEY) === '1';
-    } catch {
-      // 隐私模式下 sessionStorage 会抛 —— 那就每次都提示，
-      // 总比因为读不到而崩掉好
-      dismissed = false;
-    }
-    rotateEl.classList.toggle('show', wantsLandscape() && !dismissed);
+  function syncPortraitTip(): void {
+    wrap.classList.toggle('portrait-touch', coarse && window.innerHeight > window.innerWidth);
   }
 
-  rotBtn.addEventListener('click', () => {
-    try {
-      sessionStorage.setItem(ROTATE_KEY, '1');
-    } catch {
-      /* 存不了就算了，本次会话内也不再提示 */
-    }
-    rotateEl.classList.remove('show');
-  });
-
-  syncRotateHint();
+  syncPortraitTip();
 
   /* ── 量出可用空间，再决定房间多大、放大几倍 ── */
 
-  const plan = planRoom(window.innerWidth, window.innerHeight);
+  /*
+   * 【按舞台的实测尺寸算，不按视口】——
+   *
+   * 视口减去界面占位是【猜测】，而猜测会过期：
+   * 加日志栏漏过一次，加左右侧栏又漏一次，每次都表现成
+   * "房间比可用空间大一点，右边被切掉"。
+   *
+   * 量舞台就没有这个问题 —— 界面怎么改都对，
+   * 因为量的是改完之后的结果。
+   * 减 4 是给边框留的余量（fitCanvas 里也是这么减的）。
+   */
+  const measureW = stage.clientWidth;
+  const measureH = stage.clientHeight;
+  const plan =
+    measureW > 0 && measureH > 0
+      ? planRoomForWorld(measureW - 4, measureH - 4)
+      : /*
+         * 量不到就退回按视口估算。
+         *
+         * 什么时候会量不到：DOM 刚挂上、样式表还没生效，或者
+         * 测试环境里的假 DOM（happy-dom 不跑布局，clientWidth 恒为 0）。
+         * 这时候如果不能退回估算，就会规划出一个【最小房间】——
+         * 比"估得不准"还糟。
+         */
+        planRoom(window.innerWidth, window.innerHeight);
   const canvas = document.createElement('canvas');
   canvas.width = plan.cols * TILE;
   canvas.height = plan.rows * TILE + WALL_TOP_H;
@@ -1529,13 +1555,21 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
           ? ` &nbsp; 烛 <b>${Math.ceil(p.light.fuel / 60)}</b>s`
           : ` &nbsp; 烛 <b>—</b>`) +
         ` &nbsp; 第 <b>${state.depth}</b> 层` +
+        /*
+         * 【HP 必须在调试区【外面】】——
+         * 它是玩家每时每刻都要看的，窄屏藏掉就出事了。
+         * 藏的是下面那些"房 / 视口 / 我@x,y"—— 只有开发时有用，
+         * 而它们在手机上一行放不下，会折成两三行把游戏挤小。
+         */
+        (p !== undefined ? ` &nbsp; HP <b class="hp">${p.hp}</b>/${p.hpMax}` : '') +
+        `<span class="rt-debug">` +
         ` &nbsp; 房 <b>${plan.cols}×${plan.rows}@${plan.scale}</b>` +
         ` &nbsp; 视口 <b>${window.innerWidth}×${window.innerHeight}</b>` +
         (p !== undefined
-          ? ` &nbsp; HP <b class="hp">${p.hp}</b>/${p.hpMax}` +
-            ` &nbsp; 我@${Math.round(p.body.x / TILE)},${Math.round(p.body.y / TILE)}`
+          ? ` &nbsp; 我@${Math.round(p.body.x / TILE)},${Math.round(p.body.y / TILE)}`
           : '') +
-        ` &nbsp; 敌 <b>${foes.length}</b> ${foeDump}`;
+        ` &nbsp; 敌 <b>${foes.length}</b> ${foeDump}` +
+        `</span>`;
     }
 
     raf = requestAnimationFrame(frame);
@@ -1544,8 +1578,25 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   const onResize = (): void => {
     fitCanvas();
     // 转过来了就把提示收掉
-    syncRotateHint();
+    syncPortraitTip();
   };
+
+  /*
+   * 【只监听 window 的 resize 是不够的】
+   *
+   * 布局稳定之前量到的尺寸是错的（字体、图片、折行都还没算），
+   * 而 window 的 resize 只在【视口】变化时触发 ——
+   * 舞台自己的尺寸变了它不管。
+   *
+   * 表现是"画面右边被切掉一块"：初始那次 fitCanvas 用了一个
+   * 偏大的尺寸算缩放，之后没人再算，就一直错着。
+   *
+   * ResizeObserver 监听的是舞台【自己】的尺寸，布局一稳定就补一次，
+   * 之后任何原因导致的尺寸变化也都能跟上。
+   */
+  const ro =
+    typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fitCanvas()) : null;
+  ro?.observe(stage);
   window.addEventListener('resize', onResize);
 
   void Promise.all([
@@ -1597,8 +1648,8 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     wheel.remove();
     attackBtn.remove();
     heavyBtn.remove();
+    ro?.disconnect();
     storyEl.remove();
-    rotateEl.remove();
     midEl.remove();
     logRow.remove();
     stage.remove();
