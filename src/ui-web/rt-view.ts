@@ -660,8 +660,10 @@ export function startRtPrototype(root: HTMLElement): () => void {
       ctx?.drawImage(sheet, frame * SPR_W, 0, SPR_W, SPR_H, px, py, SPR_W, SPR_H);
       return;
     }
-    // 素材没好时的兜底：色块，但至少颜色能区分敌我
-    if (ctx === null) return;
+    // 素材没好时的兜底：色块，但至少颜色能区分敌我。
+    // 【光源不在此列】—— 它在上面就被 continue 挡掉了，
+    // 一个青色方块在地上会被当成怪物
+    if (ctx === null || e.kind === 'light') return;
     ctx.fillStyle = e.kind === 'player' ? '#d8a848' : '#4a6a68';
     ctx.fillRect(
       Math.round(e.body.x - e.body.hw),
@@ -754,6 +756,22 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
     for (const e of state.entities) {
       if (!e.alive) continue;
+      if (e.kind === 'light') {
+        // 光源用素材画。没有素材就【不画】—— 绝不退回色块：
+        // 一个青色的方块在地上会被当成怪物，比不画还糟
+        const fuel = e.light?.fuel ?? -1;
+        const art = fuel < 0 ? lightArt.lamp : lightArt.candle;
+        if (usable(art)) {
+          ctx.drawImage(
+            art,
+            Math.round(e.body.x - TILE / 2),
+            Math.round(e.body.y - TILE / 2),
+            TILE,
+            TILE,
+          );
+        }
+        continue;
+      }
       if (e.kind === 'item') {
         // 掉落物：画一个跳动的光点。素材还没有，先用形状顶上 ——
         // 关键是玩家要能看见"这里有东西"
@@ -796,6 +814,8 @@ export function startRtPrototype(root: HTMLElement): () => void {
   }
 
   const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
+  /** 光源的素材：壁灯（拿不走）和蜡烛（地上的）。实体没精灵，单独管 */
+  const lightArt: { lamp?: HTMLImageElement; candle?: HTMLImageElement } = {};
   /**
    * 理智归零后的地图配色。
    *
@@ -907,6 +927,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
     tilesZero.floor = zf;
     tilesZero.wall = zw;
   });
+  void Promise.all([loadImage('map/wall_lamp.png'), loadImage('map/candle.png')]).then(
+    ([lamp, candle]) => {
+      lightArt.lamp = lamp;
+      lightArt.candle = candle;
+    },
+  );
 
   fitCanvas();
   raf = requestAnimationFrame(frame);
