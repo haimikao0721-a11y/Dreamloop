@@ -51,8 +51,8 @@ export interface RoomPlan {
 }
 
 /** 房间再小也得有这么多格，否则一眼看全就没有探索感，怪物也没地方摆 */
-const MIN_COLS = 12;
-const MIN_ROWS = 11;
+const MIN_COLS = 11;
+const MIN_ROWS = 10;
 /** 也不能太大 —— 一屏装不下就违背了"一屏一房间" */
 const MAX_COLS = 29;
 const MAX_ROWS = 21;
@@ -71,9 +71,11 @@ const MAX_ROWS = 21;
  * 结果是可预测的；真正的适配交给 fitCanvas 按实测尺寸兜底。
  */
 export function planRoom(viewportW: number, viewportH: number): RoomPlan {
-  const availW = viewportW;
-  // 减掉上下两条：状态栏 ≈ 34px，底部提示 ≈ 22px，再加一点余量
-  const availH = Math.max(120, viewportH - 92);
+  // 留一点余量：视口尺寸和实际可用空间不一定完全一致
+  // （安全区、滚动条、状态栏估错），宁可房间小一号也不要溢出
+  const availW = Math.max(120, viewportW - 8);
+  // 减掉上下两条：状态栏 ≈ 34px，底部提示 ≈ 22px，再加余量
+  const availH = Math.max(120, viewportH - 100);
 
   // 从大缩放往小试：缩放越大，同样空间里能放的格子越少。
   // 手机上 6 倍缩放只剩 4 格宽，没法玩，所以一路降到装得下为止。
@@ -584,12 +586,22 @@ export function startRtPrototype(root: HTMLElement): () => void {
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
     // 【不重新规划房间】—— 那等于把这一局重置了。
-    // 房间是按启动时的屏幕定的，之后只调整放大倍数。
     const s = Math.min(
-      (stage.clientWidth - 8) / canvas.width,
-      (stage.clientHeight - 8) / canvas.height,
+      (stage.clientWidth - 4) / canvas.width,
+      (stage.clientHeight - 4) / canvas.height,
     );
-    const scale = Math.max(1, Math.floor(s));
+
+    /*
+     * 能用整数倍就用整数倍 —— 非整数倍会让像素大小不均匀，
+     * 一个像素忽大忽小是像素风最难看的失败方式。
+     *
+     * 【但放不下时必须允许小数】。
+     * 曾经写成 Math.max(1, Math.floor(s))：当画布比可用空间还大时
+     * floor 得到 0，max(1, 0) 又把它拉回 1 —— 于是怎么也缩不下去，
+     * 房间右侧连人带怪被挤到屏幕外面，表现就是"这个敌人不见了"。
+     * 宁可像素稍微不齐，也不能有东西看不见。
+     */
+    const scale = s >= 1 ? Math.floor(s) : Math.max(0.2, s);
     canvas.style.width = `${canvas.width * scale}px`;
     canvas.style.height = `${canvas.height * scale}px`;
   }
@@ -632,6 +644,8 @@ export function startRtPrototype(root: HTMLElement): () => void {
         .join(' ');
       stat.innerHTML =
         `<b>${fps}</b> fps &nbsp; tick <b>${state.tick}</b>` +
+        ` &nbsp; 房 <b>${plan.cols}×${plan.rows}@${plan.scale}</b>` +
+        ` &nbsp; 视口 <b>${window.innerWidth}×${window.innerHeight}</b>` +
         (p !== undefined
           ? ` &nbsp; HP <b class="hp">${p.hp}</b>/${p.hpMax}` +
             ` &nbsp; 我@${Math.round(p.body.x / TILE)},${Math.round(p.body.y / TILE)}`

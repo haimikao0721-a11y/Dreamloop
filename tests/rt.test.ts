@@ -492,8 +492,8 @@ describe('房间尺寸跟着屏幕走', () => {
 
   it('极小窗口也不会算出负数或 0 格', () => {
     const plan = planRoom(120, 200);
-    expect(plan.cols).toBeGreaterThanOrEqual(12);
-    expect(plan.rows).toBeGreaterThanOrEqual(11);
+    expect(plan.cols).toBeGreaterThanOrEqual(11);
+    expect(plan.rows).toBeGreaterThanOrEqual(10);
     expect(plan.scale).toBeGreaterThanOrEqual(1);
   });
 
@@ -504,8 +504,8 @@ describe('房间尺寸跟着屏幕走', () => {
     ] as const;
     for (const [w, h] of sizes) {
       const plan = planRoom(w, h);
-      expect(plan.cols, `${w}x${h} 格数不合法`).toBeGreaterThanOrEqual(12);
-      expect(plan.rows).toBeGreaterThanOrEqual(11);
+      expect(plan.cols, `${w}x${h} 格数不合法`).toBeGreaterThanOrEqual(11);
+      expect(plan.rows).toBeGreaterThanOrEqual(10);
       expect(plan.scale).toBeGreaterThanOrEqual(1);
       // 不能溢出屏幕
       expect(plan.cols * TILE * plan.scale, `${w}x${h} 画出来比屏幕宽`).toBeLessThanOrEqual(

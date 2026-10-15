@@ -772,8 +772,8 @@ describe('实时层原型', () => {
 
       // 画面必须真的占地方，不能是一条小带子
       expect(plan.scale, '缩放太小，玩家会以为什么都没画').toBeGreaterThanOrEqual(1);
-      expect(plan.cols).toBeGreaterThanOrEqual(12);
-      expect(plan.rows).toBeGreaterThanOrEqual(11);
+      expect(plan.cols).toBeGreaterThanOrEqual(11);
+      expect(plan.rows).toBeGreaterThanOrEqual(10);
 
       const back = [...document.querySelectorAll('button')].find((b) =>
         (b.textContent ?? '').includes('返回主菜单'),
