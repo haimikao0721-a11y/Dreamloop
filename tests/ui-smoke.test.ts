@@ -749,6 +749,71 @@ describe('返回主菜单', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
+   2f. 实时层原型（迁移计划第 1 步）
+   ═══════════════════════════════════════════════════════════════ */
+
+describe('实时层原型', () => {
+  it('能挂载：画出 canvas、状态栏和返回按钮', async () => {
+    const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
+    const teardown = startRtPrototype(document.body);
+
+    expect(document.querySelector('.rt-wrap'), '原型没挂上').not.toBeNull();
+
+    const canvas = document.querySelector('canvas');
+    expect(canvas, '没有 canvas —— 实时层没法渲染').not.toBeNull();
+    // 房间 21×15 格、每格 16px
+    expect(canvas?.width).toBe(21 * 16);
+    expect(canvas?.height).toBe(15 * 16);
+
+    const back = [...document.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回主菜单'),
+    );
+    expect(back, '原型里没有出口 —— 进去就出不来了').toBeDefined();
+
+    teardown();
+    expect(document.querySelector('.rt-wrap'), 'teardown 没清干净').toBeNull();
+  });
+
+  it('teardown 后不留任何 DOM（切回正式游戏不能有残骸）', async () => {
+    const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
+    const before = document.body.children.length;
+    const teardown = startRtPrototype(document.body);
+    expect(document.body.children.length).toBeGreaterThan(before);
+    teardown();
+    // 轮盘和 <style> 也必须清掉，只清 .rt-wrap 是不够的
+    expect(document.body.children.length).toBe(before);
+    expect(document.querySelector('.rt-wheel')).toBeNull();
+  });
+
+  it('缺 canvas 2d 上下文时也不炸（有的环境没有 canvas 实现）', async () => {
+    const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    expect(() => startRtPrototype(document.body)).not.toThrow();
+    spy.mockRestore();
+    document.querySelector('.rt-wrap')?.remove();
+    document.querySelector('.rt-wheel')?.remove();
+  });
+
+  it('原型不碰正式游戏的 DOM（并存，不互删）', async () => {
+    const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
+
+    // 用一个自己的标记节点，别用 #app —— 前面的测试已经建过一个了，
+    // getElementById 会拿到那一个，测出来的是别的东西
+    const marker = document.createElement('div');
+    marker.textContent = '正式游戏';
+    document.body.appendChild(marker);
+
+    const teardown = startRtPrototype(document.body);
+    expect(marker.textContent).toBe('正式游戏');
+    expect(document.body.contains(marker)).toBe(true);
+
+    teardown();
+    expect(document.body.contains(marker), 'teardown 把别人的节点也删了').toBe(true);
+    marker.remove();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
    3. 输入层在 DOM 环境里可用
    ═══════════════════════════════════════════════════════════════ */
 

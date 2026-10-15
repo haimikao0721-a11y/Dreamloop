@@ -46,6 +46,7 @@ import { createInput, formatProbe, isInputMode, probeEnvironment } from './input
 import type { InputNotice } from './input';
 import { UI_TEXT, createUi } from './render';
 import type { MenuEntry } from './render';
+import { startRtPrototype } from './rt-view';
 
 /* ─────────────────────────── 常量 ─────────────────────────── */
 
@@ -199,6 +200,17 @@ function shareUrl(): string {
 }
 
 function boot(): void {
+  // ?proto=rt → 实时层原型（见 docs/06-实时架构.md 的迁移计划第 1 步）。
+  //
+  // 走【查询参数】而不是新开一个 HTML 页面：
+  //   · 只有一份构建产物、一个部署地址
+  //   · 正式游戏一行都不用动，两者完全并存
+  //   · 手机上分享"试试这个原型"就是一个链接
+  if (new URLSearchParams(location.search).get('proto') === 'rt') {
+    bootRtPrototype();
+    return;
+  }
+
   if (actId === '') {
     ui.showFatal('内容包里没有 acts：CORE_PACK.acts 至少要有一幕。');
     return;
@@ -331,6 +343,31 @@ function restartRun(): void {
     return;
   }
   startRun(currentRoleId);
+}
+
+/* ─────────────────────────── 实时层原型 ─────────────────────────── */
+
+/**
+ * 挂起正式游戏，跑到实时层原型里。
+ *
+ * 正式游戏的 UI 在模块加载时就建好了（createUi 是模块级调用），
+ * 所以这里只能把它藏起来，而不是不建。藏起来比大改初始化顺序安全 ——
+ * 原型是临时产物，不该为了它动正式游戏的启动路径。
+ */
+function bootRtPrototype(): void {
+  const app = document.getElementById('app');
+  if (app !== null) app.style.display = 'none';
+
+  const teardown = startRtPrototype(document.body);
+
+  const onExit = (): void => {
+    window.removeEventListener('rt-exit', onExit);
+    teardown();
+    if (app !== null) app.style.display = '';
+    // 清掉 ?proto=rt，否则一刷新又进原型
+    history.replaceState(null, '', location.pathname + location.hash);
+  };
+  window.addEventListener('rt-exit', onExit);
 }
 
 /* ─────────────────────────── 杂项接线 ─────────────────────────── */

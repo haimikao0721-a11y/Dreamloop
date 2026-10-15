@@ -7,6 +7,22 @@ export default defineConfig({
   // 相对路径 base：构建产物可以直接丢到任何静态托管的子目录
   base: './',
 
+  /**
+   * 把 assets/ 当作 public 目录。
+   *
+   * 这样素材在开发服务器和构建产物里都【按 URL 取】：
+   *     ./map/wall.png
+   *     ./characters/dream_archivist/actions/idle.png
+   *
+   * 这正是 assets/README.md 定的约定 —— "界面按 id 取图，用 URL 引用，
+   * 不把图片 import 进 TypeScript"。import 图片会让打包器重命名文件、
+   * 生成 hash，路径就不再可控了。
+   *
+   * 用相对路径（./ 而不是 /）是为了子目录部署：
+   * 站点在 /Dreamloop/ 下时，./map/wall.png 会正确解析成 /Dreamloop/map/wall.png。
+   */
+  publicDir: 'assets',
+
   resolve: {
     alias: {
       '@core': r('./src/core'),
