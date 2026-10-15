@@ -146,44 +146,57 @@ const THEME_ZERO = {
 
 const TILE = 16;
 
-/** 医院地砖：8px 一格，缝在 0 和 8，脏点和磨损随机散布 */
+/**
+ * 医院地砖。
+ *
+ * 【第一版是 8px 一格，铺满一屏之后是纯粹的视觉噪音】——
+ * 每 8 像素一条亮缝（e #42424f 对 v #12121a，对比极大），
+ * 21×15 的房间就是几百个方格。玩久了眼睛累，而且【人看不清】——
+ * 玩家该一眼看到的是角色和怪物，不是地板。
+ *
+ * 现在：缝只用一档（d #1c1c26，几乎看不见），而且只在【上边和左边】。
+ * 铺开之后是 16px 一条极暗的线，地板退到后面去了。
+ */
 const FLOOR = [
-  'eeeeeeeeeeeeeeee',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvsvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvsvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'eeeeeeeeeeeeeeee',
-  'evvvvvvvevvvvvvv',
-  'evvsvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvsvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
+  'dddddddddddddddd',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvsvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvsvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvsvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvsvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvsvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
 ];
 
-/** 地砖变体：多一处旧污，用来打散重复感 */
+/**
+ * 地砖变体：多一处旧污，用来打散重复感。
+ * 但污渍也要压暗 —— 第一版用锈色 r(#8a4a3a) 太跳，铺满一屏全是橙斑。
+ */
 const FLOOR_STAINED = [
-  'eeeeeeeeeeeeeeee',
-  'evvvvvvvevvvvvvv',
-  'evvrrvvvevvvvvvv',
-  'evrrrrvvevvvvvvv',
-  'evvrrvvvevvvsvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevrrvvvv',
-  'eeeeeeeeeeeeeeee',
-  'evvvvvvvevrrvvvv',
-  'evvsvvvvevvrrvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvsvvv',
-  'evvvvvvvevvvvvvv',
-  'evvvvvvvevvvvvvv',
+  'dddddddddddddddd',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvddvvvvvvvvvv',
+  'dvddddvvvvvvvvvv',
+  'dvvddvvvvvvvsvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvddddvvvv',
+  'dvvvvvvvddddvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvsvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvdvvvvvv',
+  'dvvvvvvvvvvvvvvv',
+  'dvvvvvvvvvvvvvvv',
 ];
 
 /**
@@ -336,6 +349,59 @@ function tileRgba(name, art, palette) {
 
 function renderTile(name, art, palette) {
   return encodePng(TILE, TILE, tileRgba(name, art, palette));
+}
+
+/**
+ * 铺满预览：把瓦片按真实房间的样子铺开。
+ *
+ * 【为什么单张瓦片预览不够】
+ * 地板的问题不在单张瓦片上，而在【铺满一屏之后】——
+ * 8px 一格的地砖单看没问题，21×15 铺开就是几百个方格，纯粹是噪音。
+ * 判断"噪不噪"必须看铺开的样子，所以要有这一张。
+ *
+ * 布局照搬 makeTestRoom：四周墙、中间一道竖墙留个门洞。
+ */
+function buildRoomPreview(palette, scale = 3) {
+  const COLS = 21;
+  const ROWS = 15;
+  const midX = Math.floor(COLS / 2);
+  const midY = Math.floor(ROWS / 2);
+
+  const floorA = tileRgba('room/floor', TILES.floor, palette);
+  const floorB = tileRgba('room/floor_stained', TILES.floor_stained, palette);
+  const wallArt = tileRgba('room/wall', TILES.wall, palette);
+
+  const w = COLS * TILE * scale;
+  const h = ROWS * TILE * scale;
+  const buf = Buffer.alloc(w * h * 4);
+
+  for (let ty = 0; ty < ROWS; ty++) {
+    for (let tx = 0; tx < COLS; tx++) {
+      const border = tx === 0 || ty === 0 || tx === COLS - 1 || ty === ROWS - 1;
+      const isWall = border || (tx === midX && ty >= 2 && ty <= ROWS - 3 && ty !== midY);
+
+      // 地砖随机用两种变体打散重复感。用固定的伪随机，
+      // 保证每次生成的预览一样 —— 否则没法比较改动前后
+      const pick = (tx * 73856093) ^ (ty * 19349663);
+      const useStained = !isWall && pick % 7 === 0;
+      const src = isWall ? wallArt : useStained ? floorB : floorA;
+
+      const ox = tx * TILE * scale;
+      const oy = ty * TILE * scale;
+      for (let y = 0; y < TILE * scale; y++) {
+        for (let x = 0; x < TILE * scale; x++) {
+          const si = (Math.floor(y / scale) * TILE + Math.floor(x / scale)) * 4;
+          if (src[si + 3] === 0) continue;
+          const di = ((oy + y) * w + (ox + x)) * 4;
+          buf[di] = src[si];
+          buf[di + 1] = src[si + 1];
+          buf[di + 2] = src[si + 2];
+          buf[di + 3] = 255;
+        }
+      }
+    }
+  }
+  return encodePng(w, h, buf);
 }
 
 /**
@@ -769,6 +835,15 @@ for (const [themeName, palette] of Object.entries(THEMES)) {
 }
 
 writeFileSync(join(ROOT, 'assets', 'map', '_preview.png'), buildPreview());
+// 铺满预览：判断"噪不噪"必须看铺开的样子
+writeFileSync(
+  join(ROOT, 'assets', 'map', '_preview_room.png'),
+  buildRoomPreview(THEME_NORMAL),
+);
+writeFileSync(
+  join(ROOT, 'assets', 'map', '_preview_room_zero.png'),
+  buildRoomPreview(THEME_ZERO),
+);
 
 /* ══════════════════════════════════════════════════════════════
    角色：一个动作一个文件，帧横排在里面
