@@ -844,15 +844,37 @@ export function startRtPrototype(root: HTMLElement): () => void {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(1, 0, 0, 1, 0, WALL_TOP_H);
 
-    const isWallTile = (tx: number, ty: number): boolean => {
-      if (tx < 0 || ty < 0 || tx >= map.w || ty >= map.h) return true;
+    /*
+     * 【两个判断不能混成一个】
+     *
+     * 越界在【碰撞】里算实心（玩家不能走出房间），但在【可见性】
+     * 判断里必须算"不是墙"。
+     *
+     * 混用过的后果：上墙在 ty=0，检查"上方是不是墙"时问的是 ty=-1，
+     * 越界返回 true → 顶面永远不画。表现是【上墙看起来还是平的】，
+     * 而下墙正常 —— 因为下墙的上方是地板，不是越界。
+     *
+     * 这种 bug 很阴：一半对一半错，看起来像"风格不统一"而不是 bug。
+     */
+    const inBounds = (tx: number, ty: number): boolean =>
+      tx >= 0 && ty >= 0 && tx < map.w && ty < map.h;
+
+    /** 这一格是不是墙。越界算实心 —— 给碰撞语义用 */
+    const isSolidAt = (tx: number, ty: number): boolean => {
+      if (!inBounds(tx, ty)) return true;
+      return map.tiles[ty * map.w + tx] !== TILE_FLOOR;
+    };
+
+    /** 这一格是不是墙。越界【不算】—— 给"要不要画顶面"用 */
+    const isWallAt = (tx: number, ty: number): boolean => {
+      if (!inBounds(tx, ty)) return false;
       return map.tiles[ty * map.w + tx] !== TILE_FLOOR;
     };
 
     /* 地面。只画不是墙的格子 —— 墙走下面的立体通道 */
     for (let ty = 0; ty < map.h; ty++) {
       for (let tx = 0; tx < map.w; tx++) {
-        if (isWallTile(tx, ty)) continue;
+        if (isSolidAt(tx, ty)) continue;
         if (usable(skin.floor)) {
           ctx.drawImage(skin.floor, tx * TILE, ty * TILE, TILE, TILE);
         } else {
@@ -895,7 +917,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
      */
     for (let ty = 0; ty < map.h; ty++) {
       for (let tx = 0; tx < map.w; tx++) {
-        if (!isWallTile(tx, ty)) continue;
+        if (!isSolidAt(tx, ty)) continue;
         const px = tx * TILE;
         const py = ty * TILE;
 
@@ -906,7 +928,26 @@ export function startRtPrototype(root: HTMLElement): () => void {
           ctx.fillRect(px, py, TILE, TILE);
         }
 
-        if (!isWallTile(tx, ty - 1)) {
+        /*
+         * 墙根落在下方地板上的投影。
+         *
+         * 【这是立体感最有效的那条线索】—— 没有影子的墙只是
+         * "颜色深一点的地板"。有了影子，墙才"压"在地面上。
+         *
+         * 用三段实心矩形拼出渐变，不用 createLinearGradient：
+         * 每格建一个渐变的话，60fps 下一屏几百个墙就是每秒几万个对象，
+         * GC 会抖。三段在像素尺度上看起来是一样的。
+         */
+        if (!isSolidAt(tx, ty + 1)) {
+          ctx.fillStyle = 'rgba(0,0,0,0.50)';
+          ctx.fillRect(px, py + TILE, TILE, 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.26)';
+          ctx.fillRect(px, py + TILE + 2, TILE, 2);
+          ctx.fillStyle = 'rgba(0,0,0,0.11)';
+          ctx.fillRect(px, py + TILE + 4, TILE, 2);
+        }
+
+        if (!isWallAt(tx, ty - 1)) {
           if (usable(skin.wallTop)) {
             ctx.drawImage(skin.wallTop, px, py - TILE, TILE, TILE);
           } else {

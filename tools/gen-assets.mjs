@@ -235,23 +235,37 @@ const WALL = [
  * 但只在"这格墙的上方不是墙"时才画 —— 否则一排竖着的墙会出现阶梯。
  *
  * 光从上方来：前缘（贴着玩家的那一侧）最亮，后缘最暗。
+ *
+ * ── 亮度是【算过】的，不是随手挑的 ──
+ *
+ * 第一版顶面用 l(#343442)，用户反馈"感觉区别不大"。查了才发现：
+ *
+ *     地板    v  #12121a   (18)
+ *     墙正面  d  #1c1c26   (28)   ← 和地板只差 10
+ *     顶面    l  #343442   (52)   ← 和正面只差 24
+ *
+ * 全挤在亮度范围的底部 20% 里。差 10 和差 24，在这么暗的范围里
+ * 人眼根本分不出来 —— 顶面等于白画。
+ *
+ * 现在顶面用 f(#52525f, 82)，是墙正面(d)的【三倍】。
+ * 明暗差才是立体感的来源，不是"有没有顶面"这件事本身。
  */
 const WALL_TOP = [
-  'dddddddddddddddd',
-  'dlllllllllllllld',
-  'dlllslllllllllld',
-  'dllllllllllsllld',
-  'dlllllllllllllld',
-  'dlslllllllllllld',
-  'dlllllllllllllld',
-  'dllllllllsllllld',
-  'dlllllllllllllld',
-  'dllllsllllllllld',
-  'dlllllllllllllld',
-  'dllllllllllsllld',
-  'dlllllllllllllld',
-  'dlllllllllllllld',
-  'eeeeeeeeeeeeeeee',
+  'kkkkkkkkkkkkkkkk',
+  'ffffffffffffffff',
+  'fffuffffffffffff',
+  'ffffffffufffffff',
+  'ffffffffffffffff',
+  'fuffffffffffffff',
+  'ffffffffffffffff',
+  'ffffffffufffffff',
+  'ffffffffffffffff',
+  'ffffufffffffffff',
+  'ffffffffffffffff',
+  'ffffffffffffufff',
+  'ffffffffffffffff',
+  'ffffffffffffffff',
+  'pppppppppppppppp',
   'dddddddddddddddd',
 ];
 
