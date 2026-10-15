@@ -92,6 +92,7 @@ const ui = createUi({
   onIntent: (intent) => dispatch(intent),
   onNewRun: () => restartRun(),
   onShareRun: () => shareUrl(),
+  onBackToMenu: () => backToMainMenu(),
   onInputModeChange: (mode) => {
     if (isInputMode(mode)) input.setMode(mode);
   },
@@ -241,6 +242,20 @@ function boot(): void {
 function showMainMenu(): void {
   const roles = pack.roles ?? [];
 
+  /**
+   * 上锁的占位项。
+   *
+   * 点击【不导航】，只给一句短反馈 —— 现在还没有可以解释的内容。
+   * 等某个模式真开始做了，再把它换成带说明的 showNotice。
+   */
+  const locked = (id: string, title: string, desc: string): MenuEntry => ({
+    id,
+    title,
+    desc,
+    locked: true,
+    onPick: () => ui.notify(UI_TEXT.menuLockedNotice(title), 'info'),
+  });
+
   const entries: MenuEntry[] = [
     {
       id: 'story',
@@ -252,37 +267,16 @@ function showMainMenu(): void {
       },
     },
     {
-      id: 'event',
-      title: '活动模式',
-      desc: '限时事件、特殊规则的独立关卡。不加载叙事引擎，节奏更快。',
-      badge: UI_TEXT.menuBadgeSoon,
-      onPick: () =>
-        ui.showNotice(
-          '活动模式',
-          [
-            '和主线分开的独立关卡：清房间、攒 build、打 Boss，可以反复打。',
-            '它不加载叙事引擎，所以节奏比主线快得多 —— 适合只想打一会儿的时候。',
-            '还没做。想参与设计的话，欢迎到仓库开 issue。',
-          ],
-          () => showMainMenu(),
-        ),
+      id: 'preview',
+      title: '角色预览',
+      desc: '先看看两个角色分别是什么路数，再决定从谁开始。',
+      onPick: () => ui.showCharacterPreview(roles, () => showMainMenu()),
     },
-    {
-      id: 'community',
-      title: '扩展 · 社区模式',
-      desc: '加载社区写的内容包 —— 别人写的幕、角色、剧情线。',
-      badge: UI_TEXT.menuBadgeSoon,
-      onPick: () =>
-        ui.showNotice(
-          '扩展 · 社区模式',
-          [
-            '这个模式用来加载社区写的内容包：别人写的幕、角色、剧情线，装进来就能玩。',
-            '内容包是纯数据，不用改引擎代码。命名空间、覆盖规则和「世界律」写在 docs/04-社区扩展规范.md。',
-            '加载器还没做。但内容的写法已经定下来了（docs/02-数据字典.md），现在就能开始写。',
-          ],
-          () => showMainMenu(),
-        ),
-    },
+    locked('event', '活动模式', '限时事件、特殊规则的独立关卡。不加载叙事引擎，节奏更快。'),
+    locked('community', '扩展 · 社区模式', '加载社区写的内容包 —— 别人写的幕、角色、剧情线。'),
+    locked('achievements', '成就', '死法图鉴、隐藏结局、跨周目记录。'),
+    locked('codex', '档案', '见过的人、读过的东西、想起来的名字。'),
+    locked('settings', '设置', '音量、字号、动效强度、键位。'),
     {
       id: 'credits',
       title: '制作者名单',
@@ -292,6 +286,22 @@ function showMainMenu(): void {
   ];
 
   ui.showMainMenu(entries);
+}
+
+/**
+ * 返回主菜单。
+ *
+ * 放弃当前这局 —— 所以要把 state 清掉：dispatch 见到 undefined 会直接返回，
+ * 玩家在菜单上乱按不会意外推进后台那一局。
+ * 局内的 flags 就随它去，反正已经不在玩了。
+ */
+function backToMainMenu(): void {
+  state = undefined;
+  currentRoleId = null;
+  ui.hideRoleSelect();
+  ui.setLegalIntents([]);
+  ui.noteDebug('返回主菜单（当前局已放弃）');
+  showMainMenu();
 }
 
 function startRun(roleId: string): void {

@@ -42,7 +42,9 @@ function mountRoot(): HTMLElement {
  * createUi / createInput 都会往 root 里挂元素并绑定事件，
  * 所以每次测试都要重建 DOM，不能跨用例复用。
  */
-async function bootUi(extra: { onShareRun?: () => string } = {}) {
+async function bootUi(
+  extra: { onShareRun?: () => string; onBackToMenu?: () => void } = {},
+) {
   const root = mountRoot();
 
   // 动态 import：模块本身持有模块级状态，重建 DOM 后要拿新的实例
@@ -593,6 +595,156 @@ describe('制作者名单数据', () => {
   it('至少有一节真的列了人（否则名单是空的）', async () => {
     const { CREDITS } = await import('../src/data/index.js');
     expect(CREDITS.filter((s) => s.entries.length > 0).length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   2e. 上锁的占位按钮 / 角色预览 / 返回主菜单
+   ═══════════════════════════════════════════════════════════════ */
+
+describe('上锁的菜单项', () => {
+  function menuWithLocked(picked: string[]) {
+    return [
+      { id: 'story', title: '主线剧情', desc: '能玩。', onPick: () => picked.push('story') },
+      {
+        id: 'event',
+        title: '活动模式',
+        desc: '还没做。',
+        locked: true,
+        onPick: () => picked.push('event'),
+      },
+      {
+        id: 'settings',
+        title: '设置',
+        desc: '还没做。',
+        locked: true,
+        onPick: () => picked.push('settings'),
+      },
+    ];
+  }
+
+  it('上锁的项带 locked 类与锁角标', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu(menuWithLocked([]));
+
+    const lockedBtns = [...ui.els.menu.querySelectorAll('button')].filter(
+      (b) => b.dataset['locked'] === '1',
+    );
+    expect(lockedBtns.length).toBe(2);
+    for (const btn of lockedBtns) {
+      expect(btn.classList.contains('locked')).toBe(true);
+      expect(btn.textContent ?? '').toContain('已上锁');
+    }
+
+    // 能玩的那一项不该有锁
+    const story = [...ui.els.menu.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('主线剧情'),
+    );
+    expect(story?.dataset['locked']).toBeUndefined();
+    expect(story?.textContent ?? '').not.toContain('已上锁');
+  });
+
+  it('上锁的项仍然可点，且会触发回调（不是 disabled 死路）', async () => {
+    const { ui } = await bootUi();
+    const picked: string[] = [];
+    ui.showMainMenu(menuWithLocked(picked));
+
+    const lockedBtns = [...ui.els.menu.querySelectorAll('button')].filter(
+      (b) => b.dataset['locked'] === '1',
+    );
+    for (const btn of lockedBtns) {
+      expect(btn.disabled).toBe(false);
+    }
+
+    lockedBtns[0]?.click();
+    expect(picked).toEqual(['event']);
+    lockedBtns[1]?.click();
+    expect(picked).toEqual(['event', 'settings']);
+  });
+
+  it('自定义 badge 在上锁时会被锁角标取代（不叠两个角标）', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu([
+      {
+        id: 'x',
+        title: '某项',
+        desc: '',
+        badge: '自定义',
+        locked: true,
+        onPick: () => {},
+      },
+    ]);
+    const text = ui.els.menu.textContent ?? '';
+    expect(text).toContain('已上锁');
+    expect(text).not.toContain('自定义');
+  });
+});
+
+describe('角色预览', () => {
+  it('列出全部角色，并显示起始物品（选择界面看不到的那部分）', async () => {
+    const { ui } = await bootUi();
+    const { CORE_PACK } = await import('../src/data/index.js');
+    const roles = CORE_PACK.roles ?? [];
+    expect(roles.length).toBeGreaterThan(0);
+
+    ui.showCharacterPreview(roles, () => {});
+
+    const text = ui.els.menu.textContent ?? '';
+    for (const role of roles) {
+      expect(text, `预览里缺少「${role.name}」`).toContain(role.name);
+      // 属性
+      expect(text).toContain(`HP ${role.hp}`);
+    }
+    // 起始物品的名字必须出现 —— 那才是两个角色真正的分水岭
+    expect(text).toContain('起始物品');
+  });
+
+  it('有返回按钮，点了能回去', async () => {
+    const { ui } = await bootUi();
+    const { CORE_PACK } = await import('../src/data/index.js');
+    let back = 0;
+    ui.showCharacterPreview(CORE_PACK.roles ?? [], () => back++);
+
+    const backBtn = [...ui.els.menu.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回'),
+    );
+    expect(backBtn, '预览页没有返回按钮').toBeDefined();
+    backBtn?.click();
+    expect(back).toBe(1);
+  });
+
+  it('预览页里没有任何按钮能开局（它只是看，不是选）', async () => {
+    const { ui } = await bootUi();
+    const { CORE_PACK } = await import('../src/data/index.js');
+    ui.showCharacterPreview(CORE_PACK.roles ?? [], () => {});
+
+    const buttons = [...ui.els.menu.querySelectorAll('button')];
+    // 只该有「返回」这一个按钮
+    expect(buttons.length).toBe(1);
+    expect(buttons[0]?.textContent ?? '').toContain('返回');
+  });
+});
+
+describe('返回主菜单', () => {
+  it('提供 onBackToMenu 时，诊断面板里有出口按钮', async () => {
+    let back = 0;
+    const { ui } = await bootUi({ onBackToMenu: () => back++ });
+
+    const btn = [...ui.els.diag.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回主菜单'),
+    );
+    expect(btn, '诊断面板里没有返回主菜单按钮 —— 进了游戏就只能刷新页面').toBeDefined();
+    btn?.click();
+    expect(back).toBe(1);
+  });
+
+  it('不提供 onBackToMenu 时按钮仍在但不报错（可选功能）', async () => {
+    const { ui } = await bootUi();
+    const btn = [...ui.els.diag.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回主菜单'),
+    );
+    expect(btn).toBeDefined();
+    expect(() => btn?.click()).not.toThrow();
   });
 });
 

@@ -58,10 +58,19 @@ export const UI_TEXT = {
   rolePick: '开始',
 
   menuBadgeSoon: '尚未开放',
+  menuBadgeLocked: '已上锁',
+  menuLockedNotice: (title: string): string => `「${title}」还没做。`,
   menuBack: '返回',
   menuHint: '三点十七分。钟没有走过去。',
   creditsTitle: '制作者名单',
   creditsBack: '返回主菜单',
+
+  previewTitle: '角色预览',
+  previewHint: '开始之前先看看。同一段剧情，两个人看到的选项不一样。',
+  previewItems: '起始物品',
+  previewNote: '选谁不影响地图和怪物 —— 只影响你看到什么、能选什么。',
+
+  diagBackToMenu: '返回主菜单',
 
   blockedWall: '那边是墙。',
   blockedActor: '有人挡着路。',
@@ -143,8 +152,13 @@ export interface MenuEntry {
   readonly desc: string;
   /** 有值时在标题旁显示角标（例如「尚未开放」） */
   readonly badge?: string;
-  /** 灰掉但仍可点 —— 点了由调用方决定怎么解释 */
-  readonly dimmed?: boolean;
+  /**
+   * 上锁：显示锁形角标，点击【不导航】，只给一句短反馈。
+   *
+   * 为什么不做成 disabled：置灰的按钮点了毫无反应，玩家分不清
+   * "还没做"和"坏了"。锁要有锁的样子 —— 看得见、点得动、给回应。
+   */
+  readonly locked?: boolean;
   readonly onPick: () => void;
 }
 
@@ -175,6 +189,11 @@ export interface RenderOptions {
    * 而"点开就进同一局"把分享成本降到了零 —— 不用先选角色。
    */
   readonly onShareRun?: () => string;
+  /**
+   * 「返回主菜单」。诊断面板里的出口 ——
+   * 没有它，进了游戏就只能刷新页面才能回菜单。
+   */
+  readonly onBackToMenu?: () => void;
   /** 诊断面板里的模式下拉框 */
   readonly onInputModeChange?: (mode: string) => void;
   /**
@@ -192,6 +211,8 @@ export interface UiHandle {
   /** 主菜单层 */
   showMainMenu(entries: readonly MenuEntry[]): void;
   showCredits(sections: readonly CreditSectionView[], onBack: () => void): void;
+  /** 角色预览：看属性和起始物品，不开局 */
+  showCharacterPreview(roles: readonly RoleDef[], onBack: () => void): void;
   /** 通用提示页（「尚未开放」这类解释用），带一个返回按钮 */
   showNotice(title: string, paragraphs: readonly string[], onBack: () => void): void;
   hideMenu(): void;
@@ -453,7 +474,29 @@ export function createUi(opts: RenderOptions): UiHandle {
   lastSection.append(h('span', 'k', '最后事件'), diagLast);
   const debugSection = diagSection('调试');
   debugSection.appendChild(diagDebug);
-  diag.append(probeSection, h('hr'), modeSection, h('hr'), stateSection, lastSection, h('hr'), debugSection);
+
+  /**
+   * 导航区：进游戏之后唯一的回菜单入口。
+   * 现在只有一项 —— 将来暂停菜单、音量、键位这些也会挂在这里。
+   */
+  const navSection = diagSection('导航');
+  const diagBackBtn = h('button', 'diag-btn', UI_TEXT.diagBackToMenu);
+  diagBackBtn.type = 'button';
+  diagBackBtn.addEventListener('click', () => opts.onBackToMenu?.());
+  navSection.appendChild(diagBackBtn);
+
+  diag.append(
+    navSection,
+    h('hr'),
+    probeSection,
+    h('hr'),
+    modeSection,
+    h('hr'),
+    stateSection,
+    lastSection,
+    h('hr'),
+    debugSection,
+  );
 
   /* ── 受伤泛光 ── */
   const vignette = h('div', 'vignette');
@@ -1105,16 +1148,22 @@ export function createUi(opts: RenderOptions): UiHandle {
 
     const list = h('div', 'menu-list');
     for (const entry of entries) {
-      // 「尚未开放」的项【不置灰】—— 置灰等于死路。
-      // 点了给一段解释，比一个点不动的按钮有用得多。
-      const btn = h('button', `menu-item${entry.dimmed === true ? ' dimmed' : ''}`);
+      // 上锁的项【不置灰】—— 置灰等于死路。
+      // 锁要有锁的样子：看得见、点得动、点了给一句回应。
+      const btn = h('button', `menu-item${entry.locked === true ? ' locked' : ''}`);
       btn.type = 'button';
       btn.dataset['entry'] = entry.id;
+      if (entry.locked === true) btn.dataset['locked'] = '1';
 
       const head = h('div', 'menu-item-head');
       head.appendChild(h('span', 'menu-item-title', entry.title));
-      if (entry.badge !== undefined && entry.badge !== '') {
-        head.appendChild(h('span', 'menu-badge', entry.badge));
+
+      // 上锁的项固定显示锁角标，忽略自定义 badge
+      const badge = entry.locked === true ? UI_TEXT.menuBadgeLocked : entry.badge;
+      if (badge !== undefined && badge !== '') {
+        const chip = h('span', 'menu-badge', badge);
+        if (entry.locked === true) chip.classList.add('locked');
+        head.appendChild(chip);
       }
       btn.appendChild(head);
       btn.appendChild(h('div', 'menu-item-desc', entry.desc));
@@ -1123,6 +1172,63 @@ export function createUi(opts: RenderOptions): UiHandle {
       list.appendChild(btn);
     }
     inner.appendChild(list);
+    presentMenu(inner);
+  }
+
+  /**
+   * 角色预览。
+   *
+   * 和「角色选择」的区别：选择界面只给属性和 tag，
+   * 预览额外显示【起始物品】和它带来的玩法差异 ——
+   * 那才是两个角色真正的分水岭，光看数字看不出来。
+   */
+  function showCharacterPreview(roles: readonly RoleDef[], onBack: () => void): void {
+    const inner = h('div', 'menu-inner');
+    inner.appendChild(h('h1', 'menu-title', UI_TEXT.previewTitle));
+    inner.appendChild(h('p', 'menu-hint', UI_TEXT.previewHint));
+
+    for (const role of roles) {
+      const card = h('div', 'preview-card');
+      card.appendChild(h('div', 'preview-name', role.name));
+
+      for (const line of splitParagraphs(role.desc)) {
+        card.appendChild(h('p', 'preview-desc', line));
+      }
+
+      const stats = h('div', 'role-stats');
+      for (const line of [
+        `HP ${role.hp}`,
+        `理智 ${role.san}`,
+        `攻 ${role.atk}`,
+        `防 ${role.def}`,
+      ]) {
+        stats.appendChild(h('span', 'chip', line));
+      }
+      for (const tag of role.tags) stats.appendChild(h('span', 'chip tag', tag));
+      card.appendChild(stats);
+
+      const startIds = role.startItems ?? [];
+      if (startIds.length > 0) {
+        const box = h('div', 'preview-items');
+        box.appendChild(h('div', 'preview-items-title', UI_TEXT.previewItems));
+        for (const id of startIds) {
+          const def = findItem(id);
+          if (def === undefined) continue;
+          const row = h('div', 'preview-item');
+          row.appendChild(h('span', 'preview-item-name', def.name));
+          if (def.desc !== undefined && def.desc !== '') {
+            row.appendChild(h('span', 'preview-item-desc', def.desc));
+          }
+          box.appendChild(row);
+        }
+        card.appendChild(box);
+      }
+
+      inner.appendChild(card);
+    }
+
+    inner.appendChild(h('p', 'credits-note', UI_TEXT.previewNote));
+    inner.appendChild(backBar(onBack));
     presentMenu(inner);
   }
 
@@ -1438,6 +1544,7 @@ export function createUi(opts: RenderOptions): UiHandle {
     hideRoleSelect,
     showMainMenu,
     showCredits,
+    showCharacterPreview,
     showNotice,
     hideMenu,
     resetLog,
