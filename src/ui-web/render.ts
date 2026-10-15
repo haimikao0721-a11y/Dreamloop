@@ -57,6 +57,12 @@ export const UI_TEXT = {
   roleHint: '选一个角色开始。同一层楼，不同的眼睛会看见不同的东西。',
   rolePick: '开始',
 
+  menuBadgeSoon: '尚未开放',
+  menuBack: '返回',
+  menuHint: '三点十七分。钟没有走过去。',
+  creditsTitle: '制作者名单',
+  creditsBack: '返回主菜单',
+
   blockedWall: '那边是墙。',
   blockedActor: '有人挡着路。',
   tooFar: '太远了，只能走到相邻的格子。',
@@ -121,7 +127,37 @@ export interface UiElements {
   readonly story: HTMLElement;
   readonly overlay: HTMLElement;
   readonly roleSelect: HTMLElement;
+  readonly menu: HTMLElement;
   readonly diag: HTMLElement;
+}
+
+/**
+ * 主菜单的一项。
+ *
+ * 菜单结构由调用方（main.ts）给，渲染层不认识"主线""活动"这些概念 ——
+ * 加一个模式只需要多一项数据，不用改 UI。
+ */
+export interface MenuEntry {
+  readonly id: string;
+  readonly title: string;
+  readonly desc: string;
+  /** 有值时在标题旁显示角标（例如「尚未开放」） */
+  readonly badge?: string;
+  /** 灰掉但仍可点 —— 点了由调用方决定怎么解释 */
+  readonly dimmed?: boolean;
+  readonly onPick: () => void;
+}
+
+/** 制作者名单的条目，与 data/credits.ts 的结构一致 */
+export interface CreditEntryView {
+  readonly name: string;
+  readonly role: string;
+  readonly link?: string;
+}
+export interface CreditSectionView {
+  readonly title: string;
+  readonly entries: readonly CreditEntryView[];
+  readonly note?: string;
 }
 
 export interface RenderOptions {
@@ -153,6 +189,12 @@ export interface UiHandle {
   /** 角色选择全屏层 */
   showRoleSelect(roles: readonly RoleDef[], onPick: (roleId: string) => void): void;
   hideRoleSelect(): void;
+  /** 主菜单层 */
+  showMainMenu(entries: readonly MenuEntry[]): void;
+  showCredits(sections: readonly CreditSectionView[], onBack: () => void): void;
+  /** 通用提示页（「尚未开放」这类解释用），带一个返回按钮 */
+  showNotice(title: string, paragraphs: readonly string[], onBack: () => void): void;
+  hideMenu(): void;
   /** 清空日志并按 state.logLine 重建（启动 / 重开一局时用） */
   resetLog(state: GameState): void;
   /** 事件驱动的渲染：动画 + 全屏层 + 全量状态同步 */
@@ -365,6 +407,18 @@ export function createUi(opts: RenderOptions): UiHandle {
   roleSelect.setAttribute('role', 'dialog');
   roleSelect.setAttribute('aria-modal', 'true');
 
+  /**
+   * 主菜单层。
+   *
+   * 一个面板承载三种内容（主菜单 / 制作者名单 / 提示页），
+   * 而不是做三个独立的全屏层 —— 它们互斥、样式一致、
+   * 拆开只会多三份 show/hide 逻辑和三份 CSS。
+   */
+  const menu = h('section', 'menu');
+  menu.id = 'menu';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-modal', 'true');
+
   /* ── 诊断面板 ── */
   const diag = h('aside', 'diag');
   diag.id = 'diag';
@@ -404,7 +458,7 @@ export function createUi(opts: RenderOptions): UiHandle {
   /* ── 受伤泛光 ── */
   const vignette = h('div', 'vignette');
 
-  root.append(status, stage, inventory, logEl, controls, story, overlay, roleSelect, diag, vignette);
+  root.append(status, stage, inventory, logEl, controls, story, overlay, roleSelect, menu, diag, vignette);
 
   const els: UiElements = {
     root,
@@ -421,6 +475,7 @@ export function createUi(opts: RenderOptions): UiHandle {
     story,
     overlay,
     roleSelect,
+    menu,
     diag,
   };
 
@@ -1023,6 +1078,109 @@ export function createUi(opts: RenderOptions): UiHandle {
     roleSelect.textContent = '';
   }
 
+  /* ══════════════ ⑤b 主菜单（菜单 / 名单 / 提示 三合一） ══════════════ */
+
+  /** 返回按钮条 */
+  function backBar(onBack: () => void): HTMLElement {
+    const bar = h('div', 'menu-actions');
+    const btn = h('button', 'menu-back', UI_TEXT.menuBack);
+    btn.type = 'button';
+    btn.addEventListener('click', onBack);
+    bar.appendChild(btn);
+    return bar;
+  }
+
+  /** 把面板内容装好并显示 —— 三个 show* 的公共尾巴 */
+  function presentMenu(inner: HTMLElement): void {
+    menu.textContent = '';
+    menu.appendChild(inner);
+    menu.classList.add('show');
+    menu.scrollTop = 0;
+  }
+
+  function showMainMenu(entries: readonly MenuEntry[]): void {
+    const inner = h('div', 'menu-inner');
+    inner.appendChild(h('h1', 'menu-title', UI_TEXT.roleTitle));
+    inner.appendChild(h('p', 'menu-hint', UI_TEXT.menuHint));
+
+    const list = h('div', 'menu-list');
+    for (const entry of entries) {
+      // 「尚未开放」的项【不置灰】—— 置灰等于死路。
+      // 点了给一段解释，比一个点不动的按钮有用得多。
+      const btn = h('button', `menu-item${entry.dimmed === true ? ' dimmed' : ''}`);
+      btn.type = 'button';
+      btn.dataset['entry'] = entry.id;
+
+      const head = h('div', 'menu-item-head');
+      head.appendChild(h('span', 'menu-item-title', entry.title));
+      if (entry.badge !== undefined && entry.badge !== '') {
+        head.appendChild(h('span', 'menu-badge', entry.badge));
+      }
+      btn.appendChild(head);
+      btn.appendChild(h('div', 'menu-item-desc', entry.desc));
+
+      btn.addEventListener('click', entry.onPick);
+      list.appendChild(btn);
+    }
+    inner.appendChild(list);
+    presentMenu(inner);
+  }
+
+  function showCredits(sections: readonly CreditSectionView[], onBack: () => void): void {
+    const inner = h('div', 'menu-inner');
+    inner.appendChild(h('h1', 'menu-title', UI_TEXT.creditsTitle));
+
+    for (const section of sections) {
+      const block = h('div', 'credits-section');
+      block.appendChild(h('h2', 'credits-section-title', section.title));
+
+      if (section.entries.length > 0) {
+        const list = h('div', 'credits-list');
+        for (const entry of section.entries) {
+          const row = h('div', 'credits-row');
+          // 有链接就渲染成可点的，没有就纯文本
+          if (entry.link !== undefined && entry.link !== '') {
+            const a = h('a', 'credits-name', entry.name);
+            a.href = entry.link;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            row.appendChild(a);
+          } else {
+            row.appendChild(h('span', 'credits-name', entry.name));
+          }
+          row.appendChild(h('span', 'credits-role', entry.role));
+          list.appendChild(row);
+        }
+        block.appendChild(list);
+      }
+
+      if (section.note !== undefined && section.note !== '') {
+        block.appendChild(h('p', 'credits-note', section.note));
+      }
+      inner.appendChild(block);
+    }
+
+    inner.appendChild(backBar(onBack));
+    presentMenu(inner);
+  }
+
+  function showNotice(title: string, paragraphs: readonly string[], onBack: () => void): void {
+    const inner = h('div', 'menu-inner');
+    inner.appendChild(h('h1', 'menu-title', title));
+    for (const para of paragraphs) {
+      for (const line of splitParagraphs(para)) {
+        inner.appendChild(h('p', 'menu-para', line));
+      }
+    }
+    inner.appendChild(backBar(onBack));
+    presentMenu(inner);
+  }
+
+  function hideMenu(): void {
+    menu.classList.remove('show');
+    menu.textContent = '';
+  }
+
   /* ══════════════ ⑥ 诊断面板 ══════════════ */
 
   function syncDiag(): void {
@@ -1278,6 +1436,10 @@ export function createUi(opts: RenderOptions): UiHandle {
 
     showRoleSelect,
     hideRoleSelect,
+    showMainMenu,
+    showCredits,
+    showNotice,
+    hideMenu,
     resetLog,
     applyEvents,
     renderState: syncFromState,

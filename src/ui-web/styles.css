@@ -592,15 +592,32 @@ body {
   backdrop-filter: blur(4px);
 }
 
+/*
+ * 主菜单层。与 .role-select 同一套视觉语言，只是内容不同。
+ * 三种内容（菜单 / 名单 / 提示页）共用一个面板，见 render.ts 的 presentMenu。
+ */
+.menu {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  background: rgba(6, 6, 9, 0.97);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 32px) 26px calc(env(safe-area-inset-bottom) + 32px);
+}
+
 .story.show,
 .overlay.show,
-.role-select.show {
+.role-select.show,
+.menu.show {
   display: flex;
   animation: fadeIn 0.4s ease;
 }
 
 .overlay,
-.role-select {
+.role-select,
+.menu {
   z-index: 110;
 }
 
@@ -866,6 +883,185 @@ body {
 
 .role-card:active {
   background: #1d1d26;
+}
+
+/* ════════════════ 主菜单 ════════════════ */
+
+.menu-inner {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  margin-block: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: clamp(22px, 6vw, 30px);
+  font-weight: normal;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  text-align: center;
+}
+
+.menu-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.9;
+  color: #7d7a72;
+  text-align: center;
+}
+
+.menu-list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 17px 18px;
+  background: #16161d;
+  border: 1px solid #2c2c38;
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.menu-item:active {
+  background: #1d1d26;
+}
+
+.menu-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.menu-item-title {
+  font-size: 16px;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+.menu-badge {
+  font-size: 10px;
+  padding: 1px 7px;
+  border: 1px solid #4a4a58;
+  border-radius: 4px;
+  color: #8a8a96;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.menu-item-desc {
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #8f8c84;
+}
+
+.menu-para {
+  margin: 0;
+  font-size: 14px;
+  line-height: 2.05;
+  color: #b3b0a8;
+}
+
+.menu-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.menu-back {
+  padding: 11px 26px;
+  background: #16161d;
+  border: 1px solid #2c2c38;
+  border-radius: var(--radius);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.menu-back:hover,
+.menu-back:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.menu-back:active {
+  background: #1d1d26;
+}
+
+/* ════════════════ 制作者名单 ════════════════ */
+
+.credits-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credits-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: normal;
+  letter-spacing: 0.18em;
+  color: #6f6c64;
+  border-bottom: 1px solid #22222b;
+  padding-bottom: 7px;
+}
+
+.credits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.credits-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.credits-name {
+  font-size: 14px;
+  color: var(--accent);
+  text-decoration: none;
+  letter-spacing: 0.04em;
+}
+
+a.credits-name:hover {
+  text-decoration: underline;
+}
+
+.credits-role {
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: #8f8c84;
+}
+
+.credits-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.85;
+  color: #6f6c64;
 }
 
 .role-name {

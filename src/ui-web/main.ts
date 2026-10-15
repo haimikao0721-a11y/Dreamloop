@@ -40,11 +40,12 @@ import type {
   ReduceResult,
 } from '@core/types';
 // 内容包入口：全项目只有这一行认识数据层的路径
-import { CORE_PACK } from '@data/index';
+import { CORE_PACK, CREDITS } from '@data/index';
 
 import { createInput, formatProbe, isInputMode, probeEnvironment } from './input';
 import type { InputNotice } from './input';
 import { UI_TEXT, createUi } from './render';
+import type { MenuEntry } from './render';
 
 /* ─────────────────────────── 常量 ─────────────────────────── */
 
@@ -210,17 +211,87 @@ function boot(): void {
   ui.setProbeRows(formatProbe(probeEnvironment()));
   ui.noteDebug(`内容包 ${pack.id}@${pack.version}（${pack.namespace}）`);
 
-  // ?role=xxx 时跳过选人，直接进同一局 ——
-  // 别人分享"试试我这个 seed"的链接，点开就该立刻开始，不该先让他选角色。
+  // ?role=xxx 时【跳过主菜单和选人】，直接进同一局 ——
+  // 别人分享"试试我这个 seed"的链接，点开就该立刻开始。
+  // 多一层菜单就多一次流失，分享链接的价值就没了。
   if (urlRole !== null) {
+    ui.hideMenu();
     ui.hideRoleSelect();
-    ui.noteDebug(`URL 指定角色 ${urlRole}，跳过角色选择`);
+    ui.noteDebug(`URL 指定角色 ${urlRole}，跳过菜单与角色选择`);
     startRun(urlRole);
     return;
   }
 
   // 输入模式标签由 createInput 的 onModeChange 首帧推送，这里不用再设一遍
-  ui.showRoleSelect(roles, (roleId) => startRun(roleId));
+  showMainMenu();
+}
+
+/* ─────────────────────────── 主菜单 ─────────────────────────── */
+
+/**
+ * 主菜单。四个入口。
+ *
+ * 菜单结构是【数据】，渲染层不认识"主线""活动"这些概念 ——
+ * 加一个模式只需要在这里多一项，不用改 UI 代码。
+ *
+ * 「尚未开放」的两项【不置灰】：置灰等于死路，点了什么都不发生，
+ * 玩家只会以为坏了或者没做。改成点开一段解释 —— 至少能知道那是什么、
+ * 现在的进度在哪、想参与该去哪。这对一个还没做完的开源项目尤其重要。
+ */
+function showMainMenu(): void {
+  const roles = pack.roles ?? [];
+
+  const entries: MenuEntry[] = [
+    {
+      id: 'story',
+      title: '主线剧情',
+      desc: '三点十七分的夜班。三层楼，十段记录，三种死法。',
+      onPick: () => {
+        ui.hideMenu();
+        ui.showRoleSelect(roles, (roleId) => startRun(roleId));
+      },
+    },
+    {
+      id: 'event',
+      title: '活动模式',
+      desc: '限时事件、特殊规则的独立关卡。不加载叙事引擎，节奏更快。',
+      badge: UI_TEXT.menuBadgeSoon,
+      onPick: () =>
+        ui.showNotice(
+          '活动模式',
+          [
+            '和主线分开的独立关卡：清房间、攒 build、打 Boss，可以反复打。',
+            '它不加载叙事引擎，所以节奏比主线快得多 —— 适合只想打一会儿的时候。',
+            '还没做。想参与设计的话，欢迎到仓库开 issue。',
+          ],
+          () => showMainMenu(),
+        ),
+    },
+    {
+      id: 'community',
+      title: '扩展 · 社区模式',
+      desc: '加载社区写的内容包 —— 别人写的幕、角色、剧情线。',
+      badge: UI_TEXT.menuBadgeSoon,
+      onPick: () =>
+        ui.showNotice(
+          '扩展 · 社区模式',
+          [
+            '这个模式用来加载社区写的内容包：别人写的幕、角色、剧情线，装进来就能玩。',
+            '内容包是纯数据，不用改引擎代码。命名空间、覆盖规则和「世界律」写在 docs/04-社区扩展规范.md。',
+            '加载器还没做。但内容的写法已经定下来了（docs/02-数据字典.md），现在就能开始写。',
+          ],
+          () => showMainMenu(),
+        ),
+    },
+    {
+      id: 'credits',
+      title: '制作者名单',
+      desc: '做过这个梦的人，以及用到的技术。',
+      onPick: () => ui.showCredits(CREDITS, () => showMainMenu()),
+    },
+  ];
+
+  ui.showMainMenu(entries);
 }
 
 function startRun(roleId: string): void {

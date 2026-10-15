@@ -422,6 +422,181 @@ describe('分享这一局', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
+   2d. 主菜单 —— 菜单 / 制作者名单 / 提示页 三合一
+   ═══════════════════════════════════════════════════════════════ */
+
+describe('主菜单', () => {
+  /** 造一份和 main.ts 里结构一致的菜单项 */
+  function entries(picked: string[]) {
+    return [
+      { id: 'story', title: '主线剧情', desc: '三层楼。', onPick: () => picked.push('story') },
+      {
+        id: 'event',
+        title: '活动模式',
+        desc: '限时关卡。',
+        badge: '尚未开放',
+        onPick: () => picked.push('event'),
+      },
+      {
+        id: 'community',
+        title: '扩展 · 社区模式',
+        desc: '社区内容包。',
+        badge: '尚未开放',
+        onPick: () => picked.push('community'),
+      },
+      { id: 'credits', title: '制作者名单', desc: '做过的人。', onPick: () => picked.push('credits') },
+    ];
+  }
+
+  it('四个入口都渲染出来', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu(entries([]));
+
+    const text = ui.els.menu.textContent ?? '';
+    for (const title of ['主线剧情', '活动模式', '扩展 · 社区模式', '制作者名单']) {
+      expect(text, `菜单里缺少「${title}」`).toContain(title);
+    }
+    expect(ui.els.menu.classList.contains('show')).toBe(true);
+  });
+
+  it('点击某一项只触发它自己的回调', async () => {
+    const { ui } = await bootUi();
+    const picked: string[] = [];
+    ui.showMainMenu(entries(picked));
+
+    const buttons = [...ui.els.menu.querySelectorAll('button')];
+    expect(buttons.length).toBe(4);
+
+    buttons[0]?.click();
+    expect(picked).toEqual(['story']);
+
+    buttons[3]?.click();
+    expect(picked).toEqual(['story', 'credits']);
+  });
+
+  it('「尚未开放」的项仍然可点（置灰等于死路）', async () => {
+    const { ui } = await bootUi();
+    const picked: string[] = [];
+    ui.showMainMenu(entries(picked));
+
+    expect(ui.els.menu.textContent ?? '').toContain('尚未开放');
+
+    const unavailable = [...ui.els.menu.querySelectorAll('button')].filter((b) =>
+      (b.textContent ?? '').includes('尚未开放'),
+    );
+    expect(unavailable.length).toBe(2);
+    for (const btn of unavailable) {
+      expect(btn.disabled, '「尚未开放」的按钮被禁用了 —— 玩家会以为坏了').toBe(false);
+    }
+
+    // 点了必须真的有反应
+    unavailable[0]?.click();
+    expect(picked).toEqual(['event']);
+  });
+
+  it('制作者名单渲染分节、条目与说明', async () => {
+    const { ui } = await bootUi();
+    let back = 0;
+    ui.showCredits(
+      [
+        {
+          title: '制作',
+          entries: [{ name: '海米糕', role: '发起人 · 引擎', link: 'https://github.com/x' }],
+          note: '版权归创作者所有。',
+        },
+        { title: '特别感谢', entries: [], note: '这里留给你。' },
+      ],
+      () => back++,
+    );
+
+    const text = ui.els.menu.textContent ?? '';
+    for (const probe of ['制作', '海米糕', '发起人 · 引擎', '版权归创作者所有。']) {
+      expect(text, `名单里缺少「${probe}」`).toContain(probe);
+    }
+    // 空节的说明也要显示 —— 那正是"邀请"的地方
+    expect(text).toContain('特别感谢');
+    expect(text).toContain('这里留给你。');
+
+    // 有链接的渲染成 <a>，并带 noopener
+    const links = ui.els.menu.querySelectorAll('a');
+    expect(links.length).toBe(1);
+    expect(links[0]?.getAttribute('href')).toBe('https://github.com/x');
+    expect(links[0]?.getAttribute('rel')).toContain('noopener');
+
+    const backBtn = [...ui.els.menu.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回'),
+    );
+    backBtn?.click();
+    expect(back).toBe(1);
+  });
+
+  it('提示页渲染段落，并且一定有返回按钮', async () => {
+    const { ui } = await bootUi();
+    let back = 0;
+    ui.showNotice('活动模式', ['第一段。', '第二段。'], () => back++);
+
+    const text = ui.els.menu.textContent ?? '';
+    expect(text).toContain('活动模式');
+    expect(text).toContain('第一段。');
+    expect(text).toContain('第二段。');
+
+    const backBtn = [...ui.els.menu.querySelectorAll('button')].find((b) =>
+      (b.textContent ?? '').includes('返回'),
+    );
+    expect(backBtn, '提示页没有返回按钮 —— 玩家会卡在这里出不去').toBeDefined();
+    backBtn?.click();
+    expect(back).toBe(1);
+  });
+
+  it('hideMenu 会清空并隐藏面板', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu(entries([]));
+    expect(ui.els.menu.classList.contains('show')).toBe(true);
+
+    ui.hideMenu();
+    expect(ui.els.menu.classList.contains('show')).toBe(false);
+    expect(ui.els.menu.textContent).toBe('');
+  });
+
+  it('重复打开不会叠加内容（presentMenu 每次先清空）', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu(entries([]));
+    ui.showMainMenu(entries([]));
+    expect(ui.els.menu.querySelectorAll('button').length).toBe(4);
+  });
+
+  it('三种内容互相切换时不残留上一个的 DOM', async () => {
+    const { ui } = await bootUi();
+    ui.showMainMenu(entries([]));
+    ui.showCredits([{ title: '制作', entries: [{ name: '甲', role: '乙' }] }], () => {});
+    expect(ui.els.menu.textContent ?? '').not.toContain('主线剧情');
+
+    ui.showNotice('标题', ['正文'], () => {});
+    expect(ui.els.menu.textContent ?? '').not.toContain('制作');
+  });
+});
+
+describe('制作者名单数据', () => {
+  it('CREDITS 结构合法（渲染层不认识它的内容，只按结构画）', async () => {
+    const { CREDITS } = await import('../src/data/index.js');
+    expect(CREDITS.length).toBeGreaterThan(0);
+    for (const section of CREDITS) {
+      expect(section.title).toBeTruthy();
+      expect(Array.isArray(section.entries)).toBe(true);
+      for (const e of section.entries) {
+        expect(e.name).toBeTruthy();
+        expect(e.role).toBeTruthy();
+      }
+    }
+  });
+
+  it('至少有一节真的列了人（否则名单是空的）', async () => {
+    const { CREDITS } = await import('../src/data/index.js');
+    expect(CREDITS.filter((s) => s.entries.length > 0).length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
    3. 输入层在 DOM 环境里可用
    ═══════════════════════════════════════════════════════════════ */
 

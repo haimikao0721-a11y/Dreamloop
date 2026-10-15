@@ -10,3 +10,5 @@
  */
 
 export { CORE_PACK } from './packs/core/index.js';
+export { CREDITS } from './credits.js';
+export type { CreditEntry, CreditSection } from './credits.js';
