@@ -754,23 +754,34 @@ describe('返回主菜单', () => {
 
 describe('实时层原型', () => {
   it('能挂载：画出 canvas、状态栏和返回按钮', async () => {
-    const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
+    const { startRtPrototype, planRoom } = await import('../src/ui-web/rt-view.js');
+    const { TILE } = await import('../src/core/rt/index.js');
     const teardown = startRtPrototype(document.body);
 
-    expect(document.querySelector('.rt-wrap'), '原型没挂上').not.toBeNull();
+    try {
+      expect(document.querySelector('.rt-wrap'), '原型没挂上').not.toBeNull();
 
-    const canvas = document.querySelector('canvas');
-    expect(canvas, '没有 canvas —— 实时层没法渲染').not.toBeNull();
-    // 房间 21×15 格、每格 16px
-    expect(canvas?.width).toBe(21 * 16);
-    expect(canvas?.height).toBe(15 * 16);
+      const canvas = document.querySelector('canvas');
+      expect(canvas, '没有 canvas —— 实时层没法渲染').not.toBeNull();
 
-    const back = [...document.querySelectorAll('button')].find((b) =>
-      (b.textContent ?? '').includes('返回主菜单'),
-    );
-    expect(back, '原型里没有出口 —— 进去就出不来了').toBeDefined();
+      // 房间尺寸【跟着屏幕算】，不能再写死 21×15。
+      // 之前写死过，结果手机竖屏上只有 1 倍缩放，玩家进去看到一片黑。
+      const plan = planRoom(window.innerWidth, window.innerHeight);
+      expect(canvas?.width).toBe(plan.cols * TILE);
+      expect(canvas?.height).toBe(plan.rows * TILE);
 
-    teardown();
+      // 画面必须真的占地方，不能是一条小带子
+      expect(plan.scale, '缩放太小，玩家会以为什么都没画').toBeGreaterThanOrEqual(1);
+      expect(plan.cols).toBeGreaterThanOrEqual(12);
+      expect(plan.rows).toBeGreaterThanOrEqual(11);
+
+      const back = [...document.querySelectorAll('button')].find((b) =>
+        (b.textContent ?? '').includes('返回主菜单'),
+      );
+      expect(back, '原型里没有出口 —— 进去就出不来了').toBeDefined();
+    } finally {
+      teardown();
+    }
     expect(document.querySelector('.rt-wrap'), 'teardown 没清干净').toBeNull();
   });
 
@@ -780,18 +791,22 @@ describe('实时层原型', () => {
     const teardown = startRtPrototype(document.body);
     expect(document.body.children.length).toBeGreaterThan(before);
     teardown();
-    // 轮盘和 <style> 也必须清掉，只清 .rt-wrap 是不够的
+    // 轮盘、攻击键和 <style> 也必须清掉，只清 .rt-wrap 是不够的 ——
+    // 留下任何一个，正式游戏上就会盖着一层看不见的东西
     expect(document.body.children.length).toBe(before);
     expect(document.querySelector('.rt-wheel')).toBeNull();
+    expect(document.querySelector('.rt-attack')).toBeNull();
   });
 
   it('缺 canvas 2d 上下文时也不炸（有的环境没有 canvas 实现）', async () => {
     const { startRtPrototype } = await import('../src/ui-web/rt-view.js');
     const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-    expect(() => startRtPrototype(document.body)).not.toThrow();
+    let teardown: (() => void) | undefined;
+    expect(() => {
+      teardown = startRtPrototype(document.body);
+    }).not.toThrow();
     spy.mockRestore();
-    document.querySelector('.rt-wrap')?.remove();
-    document.querySelector('.rt-wheel')?.remove();
+    teardown?.();
   });
 
   it('原型不碰正式游戏的 DOM（并存，不互删）', async () => {

@@ -421,7 +421,13 @@ const THEMES = {
 const SPRITE_W = 16;
 const SPRITE_H = 24;
 
-/** 记梦者：瘦、驼背、深色外套，怀里抱着本子 */
+/**
+ * 记梦者：瘦、驼背、深色外套，怀里抱着本子。
+ *
+ * 【外套比墙亮一档】—— 墙用的是 d(#1c1c26)，外套用 s(#272733)。
+ * 实时动作游戏里，玩家必须 0.2 秒内分清"哪个是我、哪里是墙"。
+ * 全用同一个深色的话，人和墙糊成一片，帧数设计得再好也读不出来。
+ */
 const ARCHIVIST = [
   '................',
   '.....kkkkkk.....',
@@ -432,20 +438,20 @@ const ARCHIVIST = [
   '....kppppppk....',
   '.....kppppk.....',
   '......kppk......',
-  '.....dddddd.....',
-  '....dddddddd....',
-  '...dddssssddd...',
-  '...dddssssddd...',
-  '...dddssssddd...',
-  '...dddddddddd...',
-  '...dddddddddd...',
-  '....dddddddd....',
-  '....dddddddd....',
-  '.....dddddd.....',
-  '.....dd..dd.....',
-  '.....dd..dd.....',
-  '.....dd..dd.....',
-  '....ddd..ddd....',
+  '.....ssssss.....',
+  '....ssssssss....',
+  '...sssddddsss...',
+  '...sssddddsss...',
+  '...sssddddsss...',
+  '...ssssssssss...',
+  '...ssssssssss...',
+  '....ssssssss....',
+  '....ssssssss....',
+  '.....ssssss.....',
+  '.....ss..ss.....',
+  '.....ss..ss.....',
+  '.....ss..ss.....',
+  '....sss..sss....',
   '....kkk..kkk....',
 ];
 
@@ -548,7 +554,10 @@ const CRAWLER = [
 
 /**
  * 护工：高、宽、厚。
- * 和玩家角色拉开体型差 —— 玩家一眼要能看出"这个不好惹"。
+ *
+ * 【用中灰 f(#52525f)，明显比墙亮】—— 第一版用的 d 和墙同色，
+ * 结果在房间中间站着完全看不见，表现成"这个敌人没生成"。
+ * 它是场上最大的威胁，必须一眼就找到。
  */
 const ORDERLY = [
   '................',
@@ -559,21 +568,21 @@ const ORDERLY = [
   '....kppppppk....',
   '.....kppppk.....',
   '......kppk......',
-  '....dddddddd....',
-  '...dddddddddd...',
-  '..dddddddddddd..',
-  '..ddsddddddsdd..',
-  '..ddsddddddsdd..',
-  '..dddddddddddd..',
-  '..dddddddddddd..',
-  '...dddddddddd...',
-  '...dddddddddd...',
-  '....dddddddd....',
-  '....dddddddd....',
-  '....dd....dd....',
-  '....dd....dd....',
-  '....dd....dd....',
-  '...ddd....ddd...',
+  '....ffffffff....',
+  '...ffffffffff...',
+  '..ffffffffffff..',
+  '..ffufffffufff..',
+  '..ffufffffufff..',
+  '..ffffffffffff..',
+  '..ffffffffffff..',
+  '...ffffffffff...',
+  '...ffffffffff...',
+  '....ffffffff....',
+  '....ffffffff....',
+  '....ff....ff....',
+  '....ff....ff....',
+  '....ff....ff....',
+  '...fff....fff...',
   '...kkk....kkk...',
 ];
 
@@ -631,8 +640,8 @@ const CHARACTERS = {
   },
   orderly: {
     idle: ORDERLY,
-    walk_a: overlay(ORDERLY, [[4, 22, 'd'], [11, 22, '.']]),
-    walk_b: overlay(ORDERLY, [[4, 22, '.'], [11, 22, 'd']]),
+    walk_a: overlay(ORDERLY, [[4, 22, 'f'], [11, 22, '.']]),
+    walk_b: overlay(ORDERLY, [[4, 22, '.'], [11, 22, 'f']]),
     attack_startup: overlay(ORDERLY, ORDERLY_SLAM_SWING.startup),
     attack_active: overlay(ORDERLY, ORDERLY_SLAM_SWING.active),
     attack_recovery: overlay(ORDERLY, ORDERLY_SLAM_SWING.recovery),

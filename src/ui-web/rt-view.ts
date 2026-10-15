@@ -21,6 +21,7 @@ import {
   createInitialRtState,
   findPlayer,
   makeAiState,
+  findOpenCell,
   makeTestRoom,
   runTicks,
   spawn,
@@ -37,8 +38,55 @@ const ROOM_H = 15;
 /** 精灵尺寸，和 tools/gen-assets.mjs 里的一致 */
 const SPR_W = 16;
 const SPR_H = 24;
-/** 移动动画每几帧换一次图。4 tick ≈ 15fps 的走路节奏 */
+/** 移动动画每几帧换一次图。8 tick ≈ 7.5fps 的走路节奏 */
 const WALK_FRAME_TICKS = 8;
+
+/* ── 房间尺寸按屏幕算 ── */
+
+export interface RoomPlan {
+  cols: number;
+  rows: number;
+  /** 整数倍缩放 */
+  scale: number;
+}
+
+/** 房间再小也得有这么多格，否则一眼看全就没有探索感，怪物也没地方摆 */
+const MIN_COLS = 12;
+const MIN_ROWS = 11;
+/** 也不能太大 —— 一屏装不下就违背了"一屏一房间" */
+const MAX_COLS = 29;
+const MAX_ROWS = 21;
+
+/**
+ * 按可用空间决定：房间几格、放大几倍。
+ *
+ * 【为什么不能让屏幕迁就房间】
+ * 固定 21×15 的横屏房间放到手机竖屏上，宽度先卡住缩放，
+ * 结果只能是 1 倍 —— 336×240 的一个小方块挂在 800 多像素高的屏幕上，
+ * 上下全是黑的，看起来就像"什么都没画出来"。
+ *
+ * 【为什么用视口尺寸而不是量 DOM】
+ * 启动瞬间量 stage.clientWidth，布局可能还没算完，量出来是错的
+ * （实测量到 240，视口其实是 390）。用视口尺寸加一个固定估值，
+ * 结果是可预测的；真正的适配交给 fitCanvas 按实测尺寸兜底。
+ */
+export function planRoom(viewportW: number, viewportH: number): RoomPlan {
+  const availW = viewportW;
+  // 减掉上下两条：状态栏 ≈ 34px，底部提示 ≈ 22px，再加一点余量
+  const availH = Math.max(120, viewportH - 92);
+
+  // 从大缩放往小试：缩放越大，同样空间里能放的格子越少。
+  // 手机上 6 倍缩放只剩 4 格宽，没法玩，所以一路降到装得下为止。
+  for (let scale = 6; scale >= 1; scale--) {
+    const cols = Math.floor(availW / (TILE * scale));
+    const rows = Math.floor(availH / (TILE * scale));
+    if (cols >= MIN_COLS && rows >= MIN_ROWS) {
+      return { cols: Math.min(cols, MAX_COLS), rows: Math.min(rows, MAX_ROWS), scale };
+    }
+  }
+  // 空间实在太小（很小的横屏窗口），退回最小可用配置
+  return { cols: MIN_COLS, rows: MIN_ROWS, scale: 1 };
+}
 
 /* ── 样式：只作用于原型 ── */
 
@@ -52,10 +100,13 @@ const CSS = `
   -webkit-tap-highlight-color: transparent;
 }
 .rt-bar {
-  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
   padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
   font-size: 12px; color: #6b6b7a;
+  line-height: 1.4;
 }
+.rt-bar .keys { display: none; }
+@media (min-width: 560px) { .rt-bar .keys { display: inline; } }
 .rt-bar b { color: #d8a848; font-weight: normal; }
 .rt-bar .hp { color: #c46a5a; }
 .rt-bar button {
@@ -289,6 +340,8 @@ function createInputRig(wheelEl: HTMLElement, knobEl: HTMLElement, attackEl: HTM
 
 /** 实体 id → 精灵集。放在模块级是为了让 pickFrame 不用透传参数 */
 const sprites = new Map<string, SpriteSet>();
+/** 实体 id → 敌人定义 id，调试输出用 */
+const names = new Map<string, string>();
 
 export function startRtPrototype(root: HTMLElement): () => void {
   const style = document.createElement('style');
@@ -300,7 +353,11 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const bar = document.createElement('div');
   bar.className = 'rt-bar';
   const stat = document.createElement('span');
+  // 先填上 —— fps 要半秒后才算得出来，空着的话屏幕上就是一片空白，
+  // 看起来像坏了
+  stat.innerHTML = '<b>--</b> fps &nbsp; tick <b>0</b>';
   const hint = document.createElement('span');
+  hint.className = 'keys';
   hint.innerHTML = 'WASD 移动 &nbsp;·&nbsp; <b>空格 / J</b> 攻击';
   const exitBtn = document.createElement('button');
   exitBtn.type = 'button';
@@ -309,10 +366,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
   const stage = document.createElement('div');
   stage.className = 'rt-stage';
-  const canvas = document.createElement('canvas');
-  canvas.width = ROOM_W * TILE;
-  canvas.height = ROOM_H * TILE;
-  stage.appendChild(canvas);
+  // canvas 先不建 —— 要等量完 stage 的真实尺寸才能决定画多大（见 planRoom）
 
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
@@ -339,11 +393,24 @@ export function startRtPrototype(root: HTMLElement): () => void {
     attackBtn.classList.add('on');
   }
 
+  /* ── 量出可用空间，再决定房间多大、放大几倍 ── */
+
+  const plan = planRoom(window.innerWidth, window.innerHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = plan.cols * TILE;
+  canvas.height = plan.rows * TILE;
+  canvas.style.width = `${plan.cols * TILE * plan.scale}px`;
+  canvas.style.height = `${plan.rows * TILE * plan.scale}px`;
+  stage.appendChild(canvas);
+
+  /** 把格子坐标夹进房间内 —— 房间尺寸是算出来的，写死坐标会摆到墙里或墙外 */
+  const clampCell = (v: number, max: number): number => Math.max(1, Math.min(v, max - 2));
+
   /* ── 开局 ── */
 
   const state: RtState = createInitialRtState({
     seed: 20261015,
-    map: makeTestRoom(ROOM_W, ROOM_H),
+    map: makeTestRoom(plan.cols, plan.rows),
   });
 
   const player = findPlayer(state);
@@ -353,12 +420,13 @@ export function startRtPrototype(root: HTMLElement): () => void {
     player.hpMax = 22;
   }
 
-  /** 按定义造一个敌人并挂上 AI */
+  /** 按定义造一个敌人并挂上 AI。坐标会被安全化，保证不落在墙里 */
   function placeFoe(def: RtEnemyDef, tx: number, ty: number): Entity {
+    const cell = findOpenCell(state.map, tx, ty);
     const e = spawn(state, {
       kind: 'enemy',
-      x: tx * TILE,
-      y: ty * TILE,
+      x: cell.x * TILE + TILE / 2,
+      y: cell.y * TILE + TILE / 2,
       hp: def.hp,
       speed: def.speed,
       hw: def.hw,
@@ -372,13 +440,18 @@ export function startRtPrototype(root: HTMLElement): () => void {
       }),
     });
     void loadSprites(def.sprite).then((s) => sprites.set(e.id, s));
+    names.set(e.id, def.id);
     return e;
   }
 
-  // 门洞两侧各一个爬行物（快、逼走位），右半边一个护工（慢、教读抬手）
-  placeFoe(CRAWLER, 14, 4);
-  placeFoe(CRAWLER, 16, 11);
-  placeFoe(ORDERLY, 17, 7);
+  // 门洞两侧各一个爬行物（快、逼走位），右半边一个护工（慢、教读抬手）。
+  // 【坐标必须按实际房间尺寸夹一遍】—— 房间大小是算出来的，
+  // 写死的列号在窄屏上会落到墙外面，敌人就"消失"了
+  const midC = Math.floor(plan.cols / 2);
+  const midR = Math.floor(plan.rows / 2);
+  placeFoe(CRAWLER, clampCell(midC + 3, plan.cols), clampCell(3, plan.rows));
+  placeFoe(CRAWLER, clampCell(midC + 4, plan.cols), clampCell(plan.rows - 4, plan.rows));
+  placeFoe(ORDERLY, clampCell(midC + 6, plan.cols), clampCell(midR, plan.rows));
 
   if (player !== undefined) {
     void loadSprites('dream_archivist').then((s) => sprites.set(player.id, s));
@@ -509,10 +582,12 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
 
   function fitCanvas(): void {
-    // 整数倍缩放 —— 非整数倍会让像素大小不均匀
+    // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
+    // 【不重新规划房间】—— 那等于把这一局重置了。
+    // 房间是按启动时的屏幕定的，之后只调整放大倍数。
     const s = Math.min(
-      (stage.clientWidth - 16) / canvas.width,
-      (stage.clientHeight - 16) / canvas.height,
+      (stage.clientWidth - 8) / canvas.width,
+      (stage.clientHeight - 8) / canvas.height,
     );
     const scale = Math.max(1, Math.floor(s));
     canvas.style.width = `${canvas.width * scale}px`;
@@ -546,11 +621,22 @@ export function startRtPrototype(root: HTMLElement): () => void {
       frames = 0;
       fpsTimer = 0;
       const p = findPlayer(state);
-      const foes = state.entities.filter((e) => e.kind === 'enemy' && e.alive).length;
+      const foes = state.entities.filter((e) => e.kind === 'enemy' && e.alive);
+      // 把每个敌人的格子坐标打出来 —— 只看画面的话，
+      // "没生成"和"生成了但落在墙里/画不出来"分辨不出来
+      const foeDump = foes
+        .map(
+          (e) =>
+            `${names.get(e.id) ?? '?'}@${Math.round(e.body.x / TILE)},${Math.round(e.body.y / TILE)}`,
+        )
+        .join(' ');
       stat.innerHTML =
         `<b>${fps}</b> fps &nbsp; tick <b>${state.tick}</b>` +
-        (p !== undefined ? ` &nbsp; HP <b class="hp">${p.hp}</b>/${p.hpMax}` : '') +
-        ` &nbsp; 敌人 <b>${foes}</b>`;
+        (p !== undefined
+          ? ` &nbsp; HP <b class="hp">${p.hp}</b>/${p.hpMax}` +
+            ` &nbsp; 我@${Math.round(p.body.x / TILE)},${Math.round(p.body.y / TILE)}`
+          : '') +
+        ` &nbsp; 敌 <b>${foes.length}</b> ${foeDump}`;
     }
 
     raf = requestAnimationFrame(frame);

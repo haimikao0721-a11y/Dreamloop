@@ -120,7 +120,45 @@ export function wallBorder(map: TileMap): void {
 }
 
 /**
- * 造一间测试房间：四周是墙，中间一块竖直隔墙，留一个门洞。
+ * 找一个附近不是墙的格子。
+ *
+ * 【为什么这是 core 的事而不是界面的事】
+ * 房间尺寸和隔墙位置都是算出来的（见 docs/06 第十一节：房间尺寸跟着屏幕走），
+ * 所以"把东西放在第 10 行第 10 列"这种写法在窄屏上会正好落在墙里 ——
+ * 表现就是"这个敌人不见了"，而且不报任何错。
+ *
+ * 放进 core 才能被测试覆盖。放在界面里就只能靠眼睛看，而眼睛看不出来。
+ */
+export function findOpenCell(
+  map: TileMap,
+  tx: number,
+  ty: number,
+  maxRadius = 10,
+): { x: number; y: number } {
+  const cx = Math.max(1, Math.min(tx, map.w - 2));
+  const cy = Math.max(1, Math.min(ty, map.h - 2));
+  if (!isSolid(map, cx, cy)) return { x: cx, y: cy };
+
+  // 一圈圈往外找最近的空地。同圈里按扫描顺序，结果确定 —— 回放不会分叉
+  for (let r = 1; r <= maxRadius; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 1 || ny < 1 || nx >= map.w - 1 || ny >= map.h - 1) continue;
+        if (!isSolid(map, nx, ny)) return { x: nx, y: ny };
+      }
+    }
+  }
+  // 整个房间都是墙（不该发生）。返回夹过的坐标，至少不是 NaN
+  return { x: cx, y: cy };
+}
+
+/**
+ * 造一间测试房间：四周是墙，中间一道隔墙，留一个门洞。
+ *
+ * 【隔墙的方向跟着房间形状走】—— 竖着的房间放竖墙会切出两条很窄的
+ * 走廊，横着的房间放横墙同理。让墙垂直于长边，两半才都够宽。
  *
  * 有隔墙才能测出"贴墙滑动"—— 空房间里所有移动都不撞墙，
  * 碰撞代码写错了也测不出来。
@@ -128,10 +166,21 @@ export function wallBorder(map: TileMap): void {
 export function makeTestRoom(w = 21, h = 15): TileMap {
   const map = makeMap(w, h);
   wallBorder(map);
-  const midX = Math.floor(w / 2);
-  for (let y = 2; y < h - 2; y++) {
-    if (y === Math.floor(h / 2)) continue; // 门洞
-    setTile(map, midX, y, TILE_WALL);
+
+  if (h > w) {
+    // 竖屏房间：横墙，门洞开在中间一列
+    const midY = Math.floor(h / 2);
+    for (let x = 2; x < w - 2; x++) {
+      if (x === Math.floor(w / 2)) continue;
+      setTile(map, x, midY, TILE_WALL);
+    }
+  } else {
+    // 横屏房间：竖墙，门洞开在中间一行
+    const midX = Math.floor(w / 2);
+    for (let y = 2; y < h - 2; y++) {
+      if (y === Math.floor(h / 2)) continue;
+      setTile(map, midX, y, TILE_WALL);
+    }
   }
   return map;
 }

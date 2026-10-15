@@ -21,7 +21,9 @@ import {
   countKind,
   createAccumulator,
   createInitialRtState,
+  findOpenCell,
   findPlayer,
+  isSolid,
   keysToVector,
   makeInput,
   makeTestRoom,
@@ -36,6 +38,7 @@ import {
   type Body,
   type RtState,
 } from '../src/core/rt/index.js';
+import { planRoom } from '../src/ui-web/rt-view.js';
 
 /* ═══════════════════════════════════════════════════════════════
    1. 固定时间步
@@ -412,7 +415,108 @@ describe('确定性', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════
-   7. 不变量 —— 任何时刻都必须成立
+   8. 房间尺寸与摆放 —— 这两个东西一起出过 bug
+   ═══════════════════════════════════════════════════════════════ */
+
+describe('找空地', () => {
+  const map = makeTestRoom(12, 21); // 竖屏房间：横墙在第 10 行
+
+  it('本来就是地板就原样返回', () => {
+    expect(findOpenCell(map, 3, 3)).toEqual({ x: 3, y: 3 });
+  });
+
+  it('落在墙里会挪到最近的地板', () => {
+    // 第 10 行是隔墙
+    expect(isSolid(map, 3, 10)).toBe(true);
+    const cell = findOpenCell(map, 3, 10);
+    expect(isSolid(map, cell.x, cell.y), '挪完还是在墙里').toBe(false);
+    // 应该是紧挨着的，不该跑到房间另一头
+    expect(Math.abs(cell.y - 10)).toBeLessThanOrEqual(1);
+  });
+
+  it('落在门洞里不动（那里本来就能站）', () => {
+    const doorX = Math.floor(12 / 2);
+    expect(isSolid(map, doorX, 10)).toBe(false);
+    expect(findOpenCell(map, doorX, 10)).toEqual({ x: doorX, y: 10 });
+  });
+
+  it('越界会被夹回来', () => {
+    expect(findOpenCell(map, -5, -5).x).toBeGreaterThanOrEqual(1);
+    expect(findOpenCell(map, 999, 999).x).toBeLessThanOrEqual(map.w - 2);
+  });
+
+  it('【不变量】返回的格子永远不是墙', () => {
+    for (let ty = 0; ty < map.h; ty++) {
+      for (let tx = 0; tx < map.w; tx++) {
+        const cell = findOpenCell(map, tx, ty);
+        expect(isSolid(map, cell.x, cell.y), `(${tx},${ty}) 挪到了墙里`).toBe(false);
+      }
+    }
+  });
+
+  it('结果确定 —— 同样的输入给同样的输出（回放不会分叉）', () => {
+    for (let i = 0; i < 20; i++) {
+      expect(findOpenCell(map, 3, 10)).toEqual(findOpenCell(map, 3, 10));
+    }
+  });
+});
+
+describe('房间尺寸跟着屏幕走', () => {
+  it('手机竖屏 → 竖着的房间，而且填满屏幕', () => {
+    const plan = planRoom(390, 844);
+    expect(plan.rows, '竖屏该给竖房间').toBeGreaterThan(plan.cols);
+    // 画出来的尺寸不能超过视口，也不能只占一小条
+    const drawnW = plan.cols * TILE * plan.scale;
+    const drawnH = plan.rows * TILE * plan.scale;
+    expect(drawnW).toBeLessThanOrEqual(390);
+    expect(drawnH).toBeLessThanOrEqual(844);
+    expect(drawnW / 390, '宽度浪费太多').toBeGreaterThan(0.75);
+  });
+
+  it('桌面横屏 → 横着的房间', () => {
+    const plan = planRoom(1280, 800);
+    expect(plan.cols).toBeGreaterThan(plan.rows);
+    expect(plan.cols * TILE * plan.scale).toBeLessThanOrEqual(1280);
+    expect(plan.rows * TILE * plan.scale).toBeLessThanOrEqual(800);
+  });
+
+  it('【回归】手机竖屏不能只有 1 倍缩放', () => {
+    // 这就是当初"进去什么都看不见"的原因：固定 21×15 的横屏房间
+    // 放到竖屏上，宽度先卡住缩放，结果只有 1 倍 ——
+    // 336×240 的小方块挂在 800 多像素高的屏幕上，上下全是黑的
+    const plan = planRoom(390, 844);
+    expect(plan.scale, '又回到只有 1 倍了').toBeGreaterThanOrEqual(2);
+    const drawnH = plan.rows * TILE * plan.scale;
+    expect(drawnH / 844, '房间高度占屏幕比例太低，又会看到大片黑边').toBeGreaterThan(0.6);
+  });
+
+  it('极小窗口也不会算出负数或 0 格', () => {
+    const plan = planRoom(120, 200);
+    expect(plan.cols).toBeGreaterThanOrEqual(12);
+    expect(plan.rows).toBeGreaterThanOrEqual(11);
+    expect(plan.scale).toBeGreaterThanOrEqual(1);
+  });
+
+  it('各种屏幕尺寸下结果都合法', () => {
+    const sizes = [
+      [320, 568], [375, 667], [390, 844], [414, 896], [768, 1024],
+      [800, 600], [1280, 800], [1920, 1080], [2560, 1440],
+    ] as const;
+    for (const [w, h] of sizes) {
+      const plan = planRoom(w, h);
+      expect(plan.cols, `${w}x${h} 格数不合法`).toBeGreaterThanOrEqual(12);
+      expect(plan.rows).toBeGreaterThanOrEqual(11);
+      expect(plan.scale).toBeGreaterThanOrEqual(1);
+      // 不能溢出屏幕
+      expect(plan.cols * TILE * plan.scale, `${w}x${h} 画出来比屏幕宽`).toBeLessThanOrEqual(
+        Math.max(w, 1) + 1,
+      );
+    }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   9. 不变量 —— 任何时刻都必须成立
    ═══════════════════════════════════════════════════════════════ */
 
 describe('不变量', () => {
