@@ -16,6 +16,9 @@
  * ════════════════════════════════════════════════════════════════
  */
 
+import { spawn } from './entities.js';
+import { findOpenCell } from './physics.js';
+import { TILE } from './types.js';
 import type { Body, Entity, LightSource, RtState } from './types.js';
 
 /** 一个点是否在光源半径内。用圆形不是矩形 —— 光照看起来才自然 */
@@ -72,14 +75,36 @@ export function burnFuel(state: RtState): Entity[] {
 /**
  * 把蜡烛插到地上。
  *
+ * 【这段原来写在 UI 层】—— 于是 core 侧完全测不到插地逻辑，
+ * 而 core 里那个同名的 plantCandle 是个空壳（只返回 true，什么都不做），
+ * 只有测试在调它。逻辑放错层的典型症状：看起来两边都有，其实只有一边真的干活。
+ *
  * 【插地之后拿不回来】—— 这是那个取舍的代价。能拔起来的话，
  * "插地回得快"就成了纯增益，没有取舍可言。
- * 烧完之后原地留个空壳（prop），玩家能看见"这里曾经有根蜡烛"。
  *
- * 返回是否真的插下去了（手上没蜡烛就插不了）。
+ * 返回插下去的那根蜡烛；手上没蜡烛就返回 null。
  */
-export function plantCandle(holder: Entity): boolean {
+export function plantCandle(state: RtState, holder: Entity): Entity | null {
   const light = holder.light;
-  if (light === undefined || light.planted === true) return false;
-  return true;
+  if (light === undefined || light.planted === true) return null;
+
+  const cell = findOpenCell(
+    state.map,
+    Math.round(holder.body.x / TILE),
+    Math.round(holder.body.y / TILE),
+  );
+  const candle = spawn(state, {
+    kind: 'light',
+    x: cell.x * TILE + TILE / 2,
+    y: cell.y * TILE + TILE / 2,
+    // 半径更大、回得更快，但【剩余燃料减半】—— 回得快，但留不住
+    light: {
+      radius: 6 * TILE,
+      rate: 3,
+      fuel: Math.max(1, Math.floor(light.fuel / 2)),
+      planted: true,
+    },
+  });
+  holder.light = undefined;
+  return candle;
 }

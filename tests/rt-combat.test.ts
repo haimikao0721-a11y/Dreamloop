@@ -24,7 +24,7 @@ import {
   totalFrames,
 } from '../src/core/rt/action.js';
 import { makeAiState } from '../src/core/rt/types.js';
-import { spawn, updateAi } from '../src/core/rt/index.js';
+import { isSolid, spawn, updateAi } from '../src/core/rt/index.js';
 import {
   TILE,
   createInitialRtState,
@@ -479,5 +479,171 @@ describe('战斗下的确定性', () => {
       expect(a.entities[i]?.body.y).toBe(b.entities[i]?.body.y);
       expect(a.entities[i]?.action.frame).toBe(b.entities[i]?.action.frame);
     }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   7. 死亡 / 攻防 / 击退 —— 这三条一度只是"写了但没接线"
+   ═══════════════════════════════════════════════════════════════ */
+
+describe('死亡与结局', () => {
+  it('玩家血归零 → phase 变 dead、发 died 事件、判出结局', () => {
+    const state = freshState();
+    const player = findPlayer(state);
+    if (player === undefined) throw new Error('没有玩家');
+
+    player.hp = 0;
+    const events = tickRt(state, makeInput({ x: 0, y: 0 }));
+
+    expect(state.phase, '血归零了世界还在跑 —— 缺死亡接线').toBe('dead');
+    expect(events.some((e) => e.type === 'died'), '没发 died 事件').toBe(true);
+    expect(state.ending, '没判出结局 —— 官方内容必须有 requires:[] 的兜底').toBeDefined();
+  });
+
+  it('死了之后世界整个冻住', () => {
+    const state = freshState();
+    const player = findPlayer(state);
+    if (player === undefined) throw new Error('没有玩家');
+    player.hp = 0;
+    tickRt(state, makeInput({ x: 0, y: 0 }));
+
+    const tickBefore = state.tick;
+    runTicks(state, makeInput({ x: 1, y: 0 }, true), 120);
+    expect(state.tick).toBe(tickBefore);
+  });
+
+  it('玩家死后敌人回 idle，不会对着空气继续打', () => {
+    const state = freshState();
+    const player = findPlayer(state);
+    if (player === undefined) throw new Error('没有玩家');
+    const foe = spawn(state, {
+      kind: 'enemy',
+      x: player.body.x + 30,
+      y: player.body.y,
+      hp: 50,
+      speed: 60,
+      ai: makeAiState({
+        cooldownMax: 30,
+        detectRange: 150,
+        attackRange: 20,
+        stopDistance: 14,
+      }),
+    });
+    // 先跑几帧让它进入追击
+    runTicks(state, makeInput({ x: 0, y: 0 }), 5);
+
+    player.hp = 0;
+    tickRt(state, makeInput({ x: 0, y: 0 }));
+
+    expect(foe.ai?.phase, '玩家死了敌人还在追').toBe('idle');
+    expect(foe.body.vx).toBe(0);
+  });
+
+  it('活着的时候不会误判死亡', () => {
+    const state = freshState();
+    const player = findPlayer(state);
+    if (player === undefined) throw new Error('没有玩家');
+    player.hp = 1;
+    runTicks(state, makeInput({ x: 0, y: 0 }), 60);
+    expect(state.phase).toBe('playing');
+  });
+});
+
+describe('攻防进伤害公式', () => {
+  const target = { x: 0, y: 0, hw: 5, hh: 5, vx: 0, vy: 0 };
+
+  /** 玩家打敌人：只有 atk 生效 */
+  function playerHits(atk: number): number {
+    const s = freshState();
+    const a = findPlayer(s);
+    if (a === undefined) throw new Error('没有玩家');
+    const foe = spawn(s, { kind: 'enemy', x: a.body.x + 10, y: a.body.y, hp: 999 });
+    a.attack = SWING;
+    beginAction(a.action, SWING);
+    for (let i = 0; i < SWING.startup; i++) advanceAction(a.action);
+    return collectHits(a, [foe], { atk, def: 0 })[0]?.damage ?? 0;
+  }
+
+  /**
+   * 敌人打玩家：只有 def 生效。
+   *
+   * 【一开始这条测错了】—— 我拿敌人当靶子去测 def，
+   * 但 def 是【玩家挨打时】的减伤。敌人没有 def，所以怎么测都是原伤害。
+   */
+  function foeHits(def: number): number {
+    const s = freshState();
+    const a = findPlayer(s);
+    if (a === undefined) throw new Error('没有玩家');
+    // 敌人放玩家右边，朝向左边才打得到
+    const foe = spawn(s, { kind: 'enemy', x: a.body.x + 10, y: a.body.y, hp: 999 });
+    foe.facing.x = -1;
+    foe.facing.y = 0;
+    foe.attack = SWING;
+    beginAction(foe.action, SWING);
+    for (let i = 0; i < SWING.startup; i++) advanceAction(foe.action);
+    return collectHits(foe, [a], { atk: 0, def })[0]?.damage ?? 0;
+  }
+
+  it('atk 加成会打进伤害', () => {
+    expect(playerHits(5)).toBe(SWING.damage + 5);
+  });
+
+  it('def 会减伤（玩家挨打时）', () => {
+    expect(foeHits(2)).toBe(SWING.damage - 2);
+  });
+
+  it('减到 0 以下也至少 1 点 —— 打不动也要有反馈', () => {
+    expect(foeHits(999)).toBe(1);
+  });
+
+  it('不给 stats 时按基础伤害算（敌人打人不吃玩家的加成）', () => {
+    const s = freshState();
+    const a = findPlayer(s);
+    if (a === undefined) throw new Error('没有玩家');
+    const foe = spawn(s, { kind: 'enemy', x: a.body.x + 10, y: a.body.y, hp: 999 });
+    a.attack = SWING;
+    beginAction(a.action, SWING);
+    for (let i = 0; i < SWING.startup; i++) advanceAction(a.action);
+    expect(collectHits(a, [foe])[0]?.damage).toBe(SWING.damage);
+  });
+});
+
+describe('击退', () => {
+  const PUSH: ActionDef = { ...SWING, knockback: 12 };
+
+  it('被打中会被推开', () => {
+    const s = freshState();
+    const a = findPlayer(s);
+    if (a === undefined) throw new Error('没有玩家');
+    const foe = spawn(s, { kind: 'enemy', x: a.body.x + 12, y: a.body.y, hp: 999 });
+
+    a.attack = PUSH;
+    const x0 = foe.body.x;
+    tickRt(s, makeInput({ x: 0, y: 0 }, true));
+    for (let i = 0; i < totalFrames(PUSH) - 1; i++) {
+      tickRt(s, makeInput({ x: 0, y: 0 }));
+    }
+    expect(foe.body.x, '击退没生效 —— 算了但丢掉了').toBeGreaterThan(x0);
+  });
+
+  it('击退会撞墙停住，不会把人推进墙里', () => {
+    const s = freshState();
+    const a = findPlayer(s);
+    if (a === undefined) throw new Error('没有玩家');
+    // 把敌人放到左墙边上
+    const foe = spawn(s, { kind: 'enemy', x: TILE * 1.5, y: a.body.y, hp: 999 });
+    a.body.x = foe.body.x + 12;
+    a.facing.x = -1;
+    a.facing.y = 0;
+
+    const heavy: ActionDef = { ...SWING, knockback: 60 };
+    a.attack = heavy;
+    tickRt(s, makeInput({ x: 0, y: 0 }, true));
+    for (let i = 0; i < totalFrames(heavy) - 1; i++) {
+      tickRt(s, makeInput({ x: 0, y: 0 }));
+    }
+    expect(isSolid(s.map, Math.floor(foe.body.x / TILE), Math.floor(foe.body.y / TILE))).toBe(
+      false,
+    );
   });
 });

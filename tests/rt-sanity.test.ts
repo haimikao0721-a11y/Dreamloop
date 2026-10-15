@@ -61,8 +61,9 @@ const TEMPLATE: SpawnTemplate = {
   },
 };
 
-function fresh(extra: Parameters<typeof createInitialRtState>[0] = { seed: 1 }): RtState {
+function fresh(extra: Partial<Parameters<typeof createInitialRtState>[0]> = {}): RtState {
   return createInitialRtState({
+    seed: 1,
     map: makeTestRoom(21, 15),
     ...extra,
   });
@@ -173,9 +174,49 @@ describe('光', () => {
     const s = fresh();
     const p = s.entities[0];
     if (p === undefined) throw new Error('没有玩家');
-    expect(plantCandle(p)).toBe(false);
-    p.light = makeLight(50, 1, 600);
-    expect(plantCandle(p)).toBe(true);
+    expect(plantCandle(s, p)).toBeNull();
+  });
+
+  it('插地：手上没灯了，地上多一根', () => {
+    const s = fresh();
+    const p = s.entities[0];
+    if (p === undefined) throw new Error('没有玩家');
+    p.light = makeLight(4 * TILE, 1, 600);
+
+    const candle = plantCandle(s, p);
+    expect(candle, '插不下去').not.toBeNull();
+    expect(p.light, '手上的灯没清掉').toBeUndefined();
+    expect(candle?.light?.planted).toBe(true);
+    expect(candle?.light?.rate, '插地应该回得更快').toBe(3);
+  });
+
+  it('插地的代价是【剩余燃料减半】', () => {
+    const s = fresh();
+    const p = s.entities[0];
+    if (p === undefined) throw new Error('没有玩家');
+    p.light = makeLight(4 * TILE, 1, 601);
+    const candle = plantCandle(s, p);
+    // 601 / 2 向下取整 = 300。这就是"回得快但留不住"的那个代价
+    expect(candle?.light?.fuel).toBe(300);
+  });
+
+  it('已经插地的不能再插一次', () => {
+    const s = fresh();
+    const p = s.entities[0];
+    if (p === undefined) throw new Error('没有玩家');
+    p.light = makeLight(4 * TILE, 1, 600);
+    expect(plantCandle(s, p)).not.toBeNull();
+    expect(plantCandle(s, p)).toBeNull();
+  });
+
+  it('插在地上的蜡烛真的能回理智', () => {
+    const s = fresh({ sanDrainEvery: 0, san: 10 });
+    const p = s.entities[0];
+    if (p === undefined) throw new Error('没有玩家');
+    p.light = makeLight(4 * TILE, 1, 600);
+    plantCandle(s, p);
+    // 站在熄了的手持蜡烛位置，但地上那根还在照
+    expect(restoreRateAt(s, p.body)).toBe(3);
   });
 });
 

@@ -58,7 +58,8 @@ export function makeInput(
   move: Vec2,
   attack = false,
   use = false,
+  heavy = false,
 ): InputState {
   const m = clampMove(move.x, move.y);
-  return { moveX: m.x, moveY: m.y, attack, use };
+  return { moveX: m.x, moveY: m.y, attack, heavy, use };
 }

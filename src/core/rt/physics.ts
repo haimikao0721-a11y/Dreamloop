@@ -58,6 +58,34 @@ export function overlapsSolid(body: Body, map: TileMap): boolean {
  * 或者播一个"撞墙"的表现。
  */
 export function moveAndCollide(body: Body, map: TileMap, dx: number, dy: number): boolean {
+  /*
+   * 【大位移必须拆成小步走】—— 不拆就会【隧穿】。
+   *
+   * 撞墙吸附用的是【移动之后】的位置：
+   *     x = floor((x - hw) / TILE) * TILE + hw
+   * 一次走 60 像素的话，这个位置可能已经在墙【后面好几格】，
+   * 吸出来的结果是错的，人就到了墙的另一边。
+   *
+   * 正常移动每帧才 1~2 像素，撞不出来。但击退一次就是几十像素，
+   * 首次出现就是被击退的敌人穿墙跑掉。
+   *
+   * 每步不超过半格，保证一次只可能跨进相邻的一格。
+   */
+  const MAX_STEP = TILE / 2;
+  const dist = Math.max(Math.abs(dx), Math.abs(dy));
+  if (dist > MAX_STEP) {
+    const steps = Math.ceil(dist / MAX_STEP);
+    let blocked = false;
+    for (let i = 0; i < steps; i++) {
+      if (moveOnce(body, map, dx / steps, dy / steps)) blocked = true;
+    }
+    return blocked;
+  }
+  return moveOnce(body, map, dx, dy);
+}
+
+/** 走一小步（不超过半格）并在撞墙时吸附 */
+function moveOnce(body: Body, map: TileMap, dx: number, dy: number): boolean {
   let blocked = false;
 
   if (dx !== 0) {

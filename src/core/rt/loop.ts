@@ -28,13 +28,13 @@
  */
 
 import { actionDash, advanceAction, applyHits, beginAction, canAct, collectHits } from './action.js';
-import { updateAi } from './ai.js';
+import { calmAll, updateAi } from './ai.js';
 import { spawn, sweep } from './entities.js';
 import { burnFuel } from './light.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
 import { pick } from './rng.js';
 import { SANITY_MAX, findSpawnSpot, rollSpawn, tickSanity } from './sanity.js';
-import { triggerRoomStory, tryPickup, updateClearCounter } from './story.js';
+import { endRun, triggerRoomStory, tryPickup, updateClearCounter } from './story.js';
 import { DEFAULT_SPAWN, NEUTRAL_INPUT, TILE, makeAiState } from './types.js';
 import type { GameEvent } from '../types.js';
 import type { Entity, Flags, InputState, RtState, SpawnTemplate } from './types.js';
@@ -145,8 +145,11 @@ export function createInitialRtState(opts: RtInitOptions): RtState {
     depth: opts.depth ?? 1,
     flags: opts.flags ?? {},
     deaths: opts.deaths ?? 0,
-    atk: opts.atk ?? 5,
-    def: opts.def ?? 1,
+    // 【默认 0，不是 5】—— atk 是【加成】、def 是【减伤】，
+    // 基础伤害在 ActionDef.damage 里。默认给非 0 的话，
+    // 伤害会凭空高出一截，而动作表里的数字就不再是"打多少"了
+    atk: opts.atk ?? 0,
+    def: opts.def ?? 0,
     inventory: [],
     nextItemUid: 0,
     seenStories: [],
@@ -300,6 +303,10 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
       if (input.attack && entity.attack !== undefined) {
         beginAction(entity.action, entity.attack);
       }
+      // 重击优先：同一帧两个都按了就用重的（那是更明确的意图）
+      if (input.heavy && entity.heavyAttack !== undefined) {
+        beginAction(entity.action, entity.heavyAttack);
+      }
       // 交互键：捡脚下的东西。捡到叙事物件会直接开剧情，
       // 而 openStory 会把 phase 改成 'story' —— 下一帧世界就冻住了
       if (input.use) {
@@ -324,9 +331,15 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
   // ④ 命中
   for (const entity of state.entities) {
     if (!entity.alive) continue;
-    const hits = collectHits(entity, state.entities);
+    const hits = collectHits(entity, state.entities, { atk: state.atk, def: state.def });
     if (hits.length === 0) continue;
     applyHits(entity, hits);
+    // 击退：走了碰撞，所以撞墙就停住，不会把人推进墙里
+    for (const hit of hits) {
+      if (hit.knockback.x !== 0 || hit.knockback.y !== 0) {
+        moveAndCollide(hit.target.body, state.map, hit.knockback.x, hit.knockback.y);
+      }
+    }
     for (const hit of hits) {
       events.push({
         type: 'attack',
@@ -387,7 +400,20 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
     triggerRoomStory(state, events);
   }
 
-  // ⑨ 清理（拾取和剧情可能又标记了新的死亡）
+  // ⑨ 死亡判定
+  //
+  // 【必须在 sweep 之前】—— 玩家实体一旦被清掉，
+  // 这段就再也找不到"谁死了"，只会表现为"敌人对着空气继续打"。
+  const pl = state.entities.find((e) => e.kind === 'player');
+  if (pl !== undefined && pl.hp <= 0 && state.phase === 'playing') {
+    pl.alive = false;
+    // 玩家死了，所有敌人回 idle —— 不然尸体会继续被追
+    calmAll(state.entities);
+    events.push({ type: 'died', cause: '战死' });
+    endRun(state, events);
+  }
+
+  // ⑩ 清理（拾取和剧情可能又标记了新的死亡）
   sweep(state);
 
   state.tick++;

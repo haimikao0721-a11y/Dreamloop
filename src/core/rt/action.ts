@@ -122,6 +122,17 @@ export interface HitResult {
 export function collectHits(
   actor: Entity,
   candidates: readonly Entity[],
+  /**
+   * 玩家的攻防。
+   *
+   * 【为什么要有】叙事层的 buff 效果是写 atk / def 的。
+   * 不接进伤害公式的话，那些 buff 就是假的 ——
+   * 玩家吃了"攻击 +2"，打出来还是同一个数字。
+   *
+   * 语义：atk 是【加成】（基础 0），def 是【减伤】（基础 0）。
+   * 动作本身的伤害在 ActionDef.damage 里，两者相加。
+   */
+  playerStats?: { atk: number; def: number },
 ): HitResult[] {
   const as = actor.action;
   const def = as.def;
@@ -143,9 +154,14 @@ export function collectHits(
     const ky = target.body.y - actor.body.y;
     const klen = Math.hypot(kx, ky) || 1;
 
+    const atk = actor.kind === 'player' ? playerStats?.atk ?? 0 : 0;
+    const armor = target.kind === 'player' ? playerStats?.def ?? 0 : 0;
+    // 至少 1 点 —— 打不动也要有反馈，否则玩家以为没打中
+    const damage = Math.max(1, def.damage + atk - armor);
+
     out.push({
       target,
-      damage: def.damage,
+      damage,
       knockback: {
         x: (kx / klen) * def.knockback,
         y: (ky / klen) * def.knockback,

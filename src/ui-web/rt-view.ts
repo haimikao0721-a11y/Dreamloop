@@ -32,9 +32,10 @@ import {
 } from '@core/rt/index.js';
 import type { ActionState, Entity, InputState, RtState } from '@core/rt/index.js';
 import { getCurrentStory, getVisibleChoiceIndices } from '@core/narrative';
-import { chooseInStory, narrativeView, tryPickup } from '@core/rt/index.js';
-import { ARCHIVIST_LIGHT } from '@data/rt/actions.js';
+import { chooseInStory, narrativeView, plantCandle, tryPickup } from '@core/rt/index.js';
+import { ARCHIVIST_HEAVY, ARCHIVIST_LIGHT } from '@data/rt/actions.js';
 import { CRAWLER, ORDERLY } from '@data/rt/enemies.js';
+import { toSpawnTemplate } from '@data/rt/enemies.js';
 import type { RtEnemyDef } from '@data/rt/enemies.js';
 
 const ROOM_W = 21;
@@ -153,6 +154,16 @@ const CSS = `
   display: none; touch-action: none; cursor: pointer;
 }
 .rt-attack.on { display: block; }
+  /* 重击：小一圈、放在轻击左上方 —— 拇指够得着，又不会误触 */
+  .rt-heavy {
+    position: fixed; right: calc(env(safe-area-inset-right) + 118px);
+    bottom: calc(env(safe-area-inset-bottom) + 62px);
+    width: 62px; height: 62px; border-radius: 50%;
+    border: 2px solid #4a3a2c; background: rgba(224,120,72,0.2);
+    color: #e07848; font-family: inherit; font-size: 13px;
+    display: none; touch-action: none; cursor: pointer;
+  }
+  .rt-heavy.on { display: block; }
 .rt-attack:active { background: rgba(216,168,72,0.5); }
 .rt-hint { padding: 0 12px calc(env(safe-area-inset-bottom) + 10px); font-size: 11px; color: #52525f; }
 
@@ -193,6 +204,10 @@ interface SpriteSet {
   idle?: HTMLImageElement;
   move?: HTMLImageElement;
   attack?: HTMLImageElement;
+  /** 理智归零的配色。和地图一样，同一套字符画换调色板 */
+  idleZero?: HTMLImageElement;
+  moveZero?: HTMLImageElement;
+  attackZero?: HTMLImageElement;
 }
 
 const SHEET_FRAMES: Record<Sheet, number> = { idle: 1, move: 2, attack: 3 };
@@ -212,12 +227,16 @@ function loadImage(path: string): Promise<HTMLImageElement> {
 }
 
 async function loadSprites(sprite: string): Promise<SpriteSet> {
-  const [idle, move, attack] = await Promise.all([
+  // 两套配色一起加载 —— 都是几 KB 的小图，切换时才不会有白帧
+  const [idle, move, attack, idleZero, moveZero, attackZero] = await Promise.all([
     loadImage(`characters/${sprite}/actions/idle.png`),
     loadImage(`characters/${sprite}/actions/move.png`),
     loadImage(`characters/${sprite}/actions/attack.png`),
+    loadImage(`characters/${sprite}/actions/idle_zero.png`),
+    loadImage(`characters/${sprite}/actions/move_zero.png`),
+    loadImage(`characters/${sprite}/actions/attack_zero.png`),
   ]);
-  return { idle, move, attack };
+  return { idle, move, attack, idleZero, moveZero, attackZero };
 }
 
 function usable(img: HTMLImageElement | undefined): img is HTMLImageElement {
@@ -231,22 +250,38 @@ function usable(img: HTMLImageElement | undefined): img is HTMLImageElement {
  * 这就是帧数据在画面上"被看见"的地方。如果起手帧画不出区别，
  * 玩家就没有任何依据可以躲。
  */
-function pickFrame(e: Entity, tick: number): { sheet?: HTMLImageElement; frame: number } {
+function pickFrame(
+  e: Entity,
+  tick: number,
+  zero: boolean,
+): { sheet?: HTMLImageElement; frame: number } {
   const set = sprites.get(e.id);
   if (set === undefined) return { frame: 0 };
 
+  /*
+   * 【归零时换一套配色】—— 和地图一样，同一套字符画换调色板。
+   * 角色也要换：只有地图变红、人还是原色的话，看起来像两个世界拼在一起。
+   * 缺图就退回原色，不硬闪。
+   */
+  const pickSheet = (normal?: HTMLImageElement, zeroed?: HTMLImageElement) =>
+    zero && usable(zeroed) ? zeroed : normal;
+
   const phase = actionPhase(e.action);
-  if (phase === 'startup') return { sheet: set.attack, frame: 0 };
-  if (phase === 'active') return { sheet: set.attack, frame: 1 };
-  if (phase === 'recovery') return { sheet: set.attack, frame: 2 };
+  if (phase === 'startup') return { sheet: pickSheet(set.attack, set.attackZero), frame: 0 };
+  if (phase === 'active') return { sheet: pickSheet(set.attack, set.attackZero), frame: 1 };
+  if (phase === 'recovery') return { sheet: pickSheet(set.attack, set.attackZero), frame: 2 };
 
   // 在动就走走路动画。用 tick 而不是真实时间 —— 保持确定性
   const moving = Math.abs(e.body.vx) > 1 || Math.abs(e.body.vy) > 1;
   if (moving) {
-    return { sheet: set.move, frame: Math.floor(tick / WALK_FRAME_TICKS) % SHEET_FRAMES.move };
+    return {
+      sheet: pickSheet(set.move, set.moveZero),
+      frame: Math.floor(tick / WALK_FRAME_TICKS) % SHEET_FRAMES.move,
+    };
   }
-  return { sheet: set.idle, frame: 0 };
+  return { sheet: pickSheet(set.idle, set.idleZero), frame: 0 };
 }
+
 
 /* ── 输入 ── */
 
@@ -262,11 +297,13 @@ function createInputRig(
   wheelEl: HTMLElement,
   knobEl: HTMLElement,
   attackEl: HTMLElement,
+  heavyEl: HTMLElement,
   onInteract?: () => void,
 ): InputRig {
   let moveX = 0;
   let moveY = 0;
   let attackPending = false;
+  let heavyPending = false;
   let wheelPointer: number | null = null;
   const keys = new Set<string>();
 
@@ -287,6 +324,12 @@ function createInputRig(
     const k = e.key.toLowerCase();
     if (k === ' ' || k === 'j') {
       attackPending = true;
+      e.preventDefault();
+      return;
+    }
+    if (k === 'k') {
+      // 重击。只有一种攻击的话，帧数据里"轻/重"的差别就白设计了
+      heavyPending = true;
       e.preventDefault();
       return;
     }
@@ -351,11 +394,27 @@ function createInputRig(
     e.preventDefault();
   }
 
+  /**
+   * 重击按钮。触屏没有 K 键 —— 不给按钮的话，
+   * 重击在手机上等于不存在，而那正是"轻/重"设计的全部意义。
+   */
+  function onHeavyDown(e: Event): void {
+    heavyPending = true;
+    e.preventDefault();
+  }
+
   return {
     consume(): InputState {
-      const snap: InputState = { moveX, moveY, attack: attackPending, use: false };
+      const snap: InputState = {
+        moveX,
+        moveY,
+        attack: attackPending,
+        heavy: heavyPending,
+        use: false,
+      };
       // 边沿触发：这一 tick 用掉就清掉
       attackPending = false;
+      heavyPending = false;
       return snap;
     },
     pressAttack(): void {
@@ -369,6 +428,9 @@ function createInputRig(
       wheelEl.addEventListener('pointerup', onWheelUp);
       wheelEl.addEventListener('pointercancel', onWheelUp);
       attackEl.addEventListener('pointerdown', onAttackDown);
+
+  // 重击按钮。触屏没有 K 键，不给按钮的话重击在手机上等于不存在
+  heavyEl.addEventListener('pointerdown', onHeavyDown);
     },
     destroy(): void {
       window.removeEventListener('keydown', onKeyDown);
@@ -378,6 +440,7 @@ function createInputRig(
       wheelEl.removeEventListener('pointerup', onWheelUp);
       wheelEl.removeEventListener('pointercancel', onWheelUp);
       attackEl.removeEventListener('pointerdown', onAttackDown);
+      heavyEl.removeEventListener('pointerdown', onHeavyDown);
     },
   };
 }
@@ -404,7 +467,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   stat.innerHTML = '<b>--</b> fps &nbsp; tick <b>0</b>';
   const hint = document.createElement('span');
   hint.className = 'keys';
-  hint.innerHTML = 'WASD 移动 &nbsp;·&nbsp; <b>空格 / J</b> 攻击';
+  hint.innerHTML = 'WASD 移动 &nbsp;·&nbsp; <b>空格 / J</b> 轻击 &nbsp;·&nbsp; <b>K</b> 重击 &nbsp;·&nbsp; <b>E</b> 交互';
   const exitBtn = document.createElement('button');
   exitBtn.type = 'button';
   exitBtn.textContent = '返回主菜单';
@@ -430,6 +493,11 @@ export function startRtPrototype(root: HTMLElement): () => void {
   attackBtn.className = 'rt-attack';
   attackBtn.textContent = '攻击';
 
+  const heavyBtn = document.createElement('button');
+  heavyBtn.type = 'button';
+  heavyBtn.className = 'rt-heavy';
+  heavyBtn.textContent = '重击';
+
   /* 全屏剧情层。内容由 renderStory() 填 —— 它跑在每一帧里 */
   const storyEl = document.createElement('section');
   storyEl.className = 'rt-story';
@@ -438,12 +506,13 @@ export function startRtPrototype(root: HTMLElement): () => void {
   storyEl.appendChild(storyInner);
 
   wrap.append(bar, stage, hintBar);
-  root.append(style, wrap, wheel, attackBtn, storyEl);
+  root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl);
 
   const coarse = window.matchMedia('(pointer: coarse)').matches;
   if (coarse) {
     wheel.classList.add('on');
     attackBtn.classList.add('on');
+  heavyBtn.classList.add('on');
   }
 
   /* ── 量出可用空间，再决定房间多大、放大几倍 ── */
@@ -501,12 +570,19 @@ export function startRtPrototype(root: HTMLElement): () => void {
     ...(Number.isFinite(sanParam) && qs.has('san') ? { san: sanParam } : {}),
   });
   state.spawnConfig = { ...state.spawnConfig, baseInterval: spawnInterval };
+  /*
+   * 【实时刷怪的表必须传进去】—— createInitialRtState 的 spawnTable
+   * 默认是空数组，不传的话"理智越低刷得越多"这条机制在原型里
+   * 完全不生效，而且不报错，看起来一切正常。
+   */
+  state.spawnTable = [toSpawnTemplate(CRAWLER), toSpawnTemplate(ORDERLY)];
   // 玩家出生时理智回满，否则 ?san= 之外的参数都看不出效果
   state.san = Number.isFinite(sanParam) && qs.has('san') ? sanParam : state.sanMax;
 
   const player = findPlayer(state);
   if (player !== undefined) {
     player.attack = ARCHIVIST_LIGHT;
+    player.heavyAttack = ARCHIVIST_HEAVY;
     player.hp = 22;
     player.hpMax = 22;
   }
@@ -514,21 +590,20 @@ export function startRtPrototype(root: HTMLElement): () => void {
   /** 按定义造一个敌人并挂上 AI。坐标会被安全化，保证不落在墙里 */
   function placeFoe(def: RtEnemyDef, tx: number, ty: number): Entity {
     const cell = findOpenCell(state.map, tx, ty);
+    // 【用数据层的转换函数】—— 手写的话容易漏字段，
+    // 之前就漏过 sanDrain，"怪靠近掉理智"在原型里根本不生效，还不报错
+    const tpl = toSpawnTemplate(def);
     const e = spawn(state, {
       kind: 'enemy',
       x: cell.x * TILE + TILE / 2,
       y: cell.y * TILE + TILE / 2,
-      hp: def.hp,
-      speed: def.speed,
-      hw: def.hw,
-      hh: def.hh,
-      attack: def.attack,
-      ai: makeAiState({
-        cooldownMax: def.cooldown,
-        detectRange: def.detectRange,
-        attackRange: def.attackRange,
-        stopDistance: def.stopDistance,
-      }),
+      hp: tpl.hp,
+      speed: tpl.speed,
+      hw: tpl.hw,
+      hh: tpl.hh,
+      attack: tpl.attack,
+      sanDrain: tpl.sanDrain,
+      ai: makeAiState(tpl.ai),
     });
     void loadSprites(def.sprite).then((s) => sprites.set(e.id, s));
     names.set(e.id, def.id);
@@ -574,28 +649,17 @@ export function startRtPrototype(root: HTMLElement): () => void {
     });
   }
 
-  /** 把手上的蜡烛插到地上：范围更大、回得更快，但【烧得也更快】 */
+  /**
+   * 把手上的蜡烛插到地上。
+   * 逻辑在 core（light.ts 的 plantCandle）—— UI 只负责触发，
+   * 这样插地规则能被测试覆盖，而不是只有玩到才验证得了。
+   */
   function plantCarriedCandle(): boolean {
     if (player === undefined) return false;
-    const light = player.light;
-    if (light === undefined || light.planted === true) return false;
-    const cell = findOpenCell(
-      state.map,
-      Math.round(player.body.x / TILE),
-      Math.round(player.body.y / TILE),
-    );
-    spawn(state, {
-      kind: 'light',
-      x: cell.x * TILE + TILE / 2,
-      y: cell.y * TILE + TILE / 2,
-      // 剩余燃料【减半】—— 这就是那个取舍的代价：回得快，但留不住
-      light: { radius: 6 * TILE, rate: 3, fuel: Math.max(1, Math.floor(light.fuel / 2)), planted: true },
-    });
-    player.light = undefined;
-    return true;
+    return plantCandle(state, player) !== null;
   }
 
-  const rig = createInputRig(wheel, knob, attackBtn, () => {
+  const rig = createInputRig(wheel, knob, attackBtn, heavyBtn, () => {
     // 先看脚下有没有东西
     if (!tryPickup(state, [])) plantCarriedCandle();
   });
@@ -675,7 +739,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   let fps = 0;
 
   function drawEntity(e: Entity): void {
-    const { sheet, frame } = pickFrame(e, state.tick);
+    const { sheet, frame } = pickFrame(e, state.tick, isZeroState(state.san));
     // 精灵比格子高，脚底对齐碰撞体下沿
     const px = Math.round(e.body.x - SPR_W / 2);
     const py = Math.round(e.body.y + e.body.hh - SPR_H);
@@ -973,6 +1037,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
     wrap.remove();
     wheel.remove();
     attackBtn.remove();
+    heavyBtn.remove();
     storyEl.remove();
     style.remove();
   };

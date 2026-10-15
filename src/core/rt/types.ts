@@ -149,8 +149,10 @@ export interface Entity {
   action: ActionState;
   /** 敌人 AI。玩家没有 */
   ai?: AiState;
-  /** 这个实体能出什么招 */
+  /** 这个实体能出什么招（轻击） */
   attack?: ActionDef;
+  /** 重击。没有就是不会重击（敌人暂时都不会） */
+  heavyAttack?: ActionDef;
   /** 这个实体发光。壁灯、蜡烛都是 */
   light?: LightSource;
   /** 待在它旁边每秒扣多少理智。只有敌人有 */
@@ -209,6 +211,14 @@ export interface InputState {
    * 变成"按住就自动打"，起手帧的意义就没了。
    */
   readonly attack: boolean;
+  /**
+   * 重击。【和 attack 同一个道理，边沿触发】。
+   *
+   * 重击起手长、收招长、伤害高 —— 面对慢而厚的敌人该用它，
+   * 面对快的用轻击。只有一种攻击的话，帧数据里那套
+   * "轻/重"的差别就白设计了。
+   */
+  readonly heavy: boolean;
   /** 拾取 / 交互，同样边沿触发 */
   readonly use: boolean;
 }
@@ -217,6 +227,7 @@ export const NEUTRAL_INPUT: InputState = {
   moveX: 0,
   moveY: 0,
   attack: false,
+  heavy: false,
   use: false,
 };
 

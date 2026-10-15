@@ -32,8 +32,10 @@ export interface SpawnOptions {
   hp?: number;
   speed?: number;
   facing?: Vec2;
-  /** 能出什么招 */
+  /** 能出什么招（轻击） */
   attack?: ActionDef;
+  /** 重击 */
+  heavyAttack?: ActionDef;
   /** 有 ai 的就是会被驱动着追人的 */
   ai?: AiState;
   /** 发光体（壁灯、蜡烛） */
@@ -69,6 +71,7 @@ export function spawn(state: RtState, opts: SpawnOptions): Entity {
     action: emptyAction(),
     ai: opts.ai,
     attack: opts.attack,
+    heavyAttack: opts.heavyAttack,
     light: opts.light,
     sanDrain: opts.sanDrain,
     storyNode: opts.storyNode,

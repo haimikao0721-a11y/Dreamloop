@@ -13,7 +13,7 @@
  * ════════════════════════════════════════════════════════════════
  */
 
-import type { ActionDef } from '@core/rt/types.js';
+import type { ActionDef, SpawnTemplate } from '@core/rt/types.js';
 
 import { CRAWLER_BITE, ORDERLY_SLAM } from './actions.js';
 
@@ -73,6 +73,33 @@ export const ORDERLY: RtEnemyDef = {
 };
 
 export const RT_ENEMIES: readonly RtEnemyDef[] = [CRAWLER, ORDERLY];
+
+/**
+ * 敌人定义 → 实时层的刷怪模板。
+ *
+ * 【为什么要有这个函数】core 不认识"爬行物"是什么，只认识
+ * SpawnTemplate。手写转换的话，摆三只敌人要写一遍、测试再写一遍 ——
+ * 而且已经因此漏过一个字段（sanDrain 没传，"怪靠近掉理智"
+ * 在原型里根本不生效，还不报错）。
+ *
+ * 一处转换，两边共用。
+ */
+export function toSpawnTemplate(def: RtEnemyDef): SpawnTemplate {
+  return {
+    hp: def.hp,
+    speed: def.speed,
+    hw: def.hw,
+    hh: def.hh,
+    attack: def.attack,
+    sanDrain: def.sanDrain,
+    ai: {
+      cooldownMax: def.cooldown,
+      detectRange: def.detectRange,
+      attackRange: def.attackRange,
+      stopDistance: def.stopDistance,
+    },
+  };
+}
 
 export function findRtEnemy(id: string): RtEnemyDef | undefined {
   return RT_ENEMIES.find((e) => e.id === id);

@@ -221,6 +221,30 @@ describe('碰撞', () => {
     expect(b.x).toBeCloseTo(TILE * 10 - b.hw, 3);
   });
 
+  it('【回归】一次大位移不会穿墙（隧穿）', () => {
+    /*
+     * 撞墙吸附用的是【移动之后】的位置：
+     *     x = floor((x - hw) / TILE) * TILE + hw
+     * 一次走 60 像素的话，这个位置可能已经在墙后面好几格，
+     * 吸出来的结果是错的 —— 人就到了墙的另一边。
+     *
+     * 正常移动每帧才 1~2 像素撞不出来，但击退一次就是几十像素。
+     * 这个 bug 第一次出现就是"被击退的敌人穿墙跑掉"。
+     */
+    const b = bodyAt(TILE * 2.5, TILE * 2.5);
+    moveAndCollide(b, map, 600, 0); // 一次推 600 像素，够跨半个房间
+    expect(b.x, '一次大位移穿过了中间那道墙').toBeLessThan(TILE * 10);
+    expect(overlapsSolid(b, map), '穿墙之后卡在墙里').toBe(false);
+  });
+
+  it('斜向的大位移也拆得开', () => {
+    const b = bodyAt(TILE * 2.5, TILE * 2.5);
+    moveAndCollide(b, map, -600, -600);
+    expect(overlapsSolid(b, map)).toBe(false);
+    expect(b.x).toBeGreaterThanOrEqual(TILE);
+    expect(b.y).toBeGreaterThanOrEqual(TILE);
+  });
+
   it('门洞能过去', () => {
     const midY = Math.floor(15 / 2) * TILE + TILE / 2;
     const b = bodyAt(TILE * 2.5, midY);
