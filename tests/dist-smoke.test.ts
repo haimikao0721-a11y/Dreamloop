@@ -27,7 +27,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 // ⚠️ 不能用 import.meta.url 定位 dist：
 //    happy-dom 环境下它不是 file:// 协议，fileURLToPath 会抛
@@ -132,5 +132,53 @@ describe.skipIf(!built)('构建产物能跑起来', () => {
       logs.length,
       `产物里有 ${logs.length} 处 console.log —— 发布前该清掉`,
     ).toBeLessThanOrEqual(2);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   3. 原型退出后必须真的回到正式游戏
+   ═══════════════════════════════════════════════════════════════ */
+
+describe.skipIf(!built)('原型退出', () => {
+  it('点「返回主菜单」之后主菜单真的出现 —— 不能是一片黑', async () => {
+    /*
+     * 这一条守的是一个真发生过的 bug：
+     *
+     *   boot() 见到 ?proto=rt 就 return 了，正式游戏【从来没启动过】。
+     *   退出时只把藏起来的 #app 显示回来，那是个空壳 ——
+     *   状态栏全是"—"、地图全黑、主菜单也不在。
+     *
+     * 所以这里必须从"带 ?proto=rt 冷启动"开始，走完整的退出路径。
+     */
+    vi.resetModules();
+    const w = window as unknown as { happyDOM?: { setURL(u: string): void } };
+    w.happyDOM?.setURL('http://localhost/?proto=rt');
+
+    document.body.innerHTML = '';
+    const root = document.createElement('div');
+    root.id = 'app';
+    document.body.appendChild(root);
+
+    // 带一个查询串强制重新求值，绕开模块缓存
+    await import(/* @vite-ignore */ `${ENTRY_URL}?proto=${Date.now()}`);
+
+    // 冷启动应该进原型
+    expect(document.querySelector('.rt-wrap'), '带 ?proto=rt 却没进原型').not.toBeNull();
+
+    // 【必须限定在 .rt-wrap 里面找】—— 正式游戏的诊断面板里也有一个
+    // 「返回主菜单」，全局找会先拿到那一个，测出来的就是别的东西
+    const wrap = document.querySelector('.rt-wrap');
+    const exitBtn = [...(wrap?.querySelectorAll('button') ?? [])].find((b) =>
+      (b.textContent ?? '').includes('返回主菜单'),
+    );
+    expect(exitBtn, '原型里没有出口按钮').toBeDefined();
+    exitBtn?.click();
+
+    // 原型要清干净
+    expect(document.querySelector('.rt-wrap'), '退出后原型残留').toBeNull();
+    // 正式游戏要真的起来 —— 主菜单是 boot() 之后的第一屏
+    const text = document.body.textContent ?? '';
+    expect(text, '退出后主菜单没出现 —— 又是一片黑').toContain('主线剧情');
+    expect(text, '退出后主菜单没出现 —— 又是一片黑').toContain('制作者名单');
   });
 });

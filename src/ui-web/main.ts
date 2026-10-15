@@ -366,6 +366,18 @@ function bootRtPrototype(): void {
     if (app !== null) app.style.display = '';
     // 清掉 ?proto=rt，否则一刷新又进原型
     history.replaceState(null, '', location.pathname + location.hash);
+
+    /*
+     * 【必须重新 boot】—— 这一步漏了就会退出后一片黑。
+     *
+     * 页面加载时 boot() 见到 ?proto=rt 就 return 了（见 boot 开头），
+     * 所以正式游戏【从来没启动过】：主菜单没显示、state 是空的、
+     * 状态栏全是"—"。上面那句 app.style.display = '' 只是把一个
+     * 空壳显示回来而已。
+     *
+     * 这里补上，才是真的"回到正式版"。
+     */
+    boot();
   };
   window.addEventListener('rt-exit', onExit);
 }
