@@ -152,12 +152,14 @@ export function planRoom(viewportW: number, viewportH: number): RoomPlan {
 /* ── 样式：只作用于原型 ── */
 
 const CSS = `
+
 .rt-wrap {
   /*
    * 【左右侧栏】以后要放面板（背包、地图、状态），现在先留出来。
    * 改这一个数就能开 —— 舞台和日志都用同一个变量，
    * 所以两者永远对齐，不会一个宽一个窄。
    */
+  /* 窄屏不占地方 —— 手机上本来就没空间，硬留两栏反而玩不了 */
   --side-w: 0px;
   --gutter: 12px;
   position: fixed; inset: 0; z-index: 200;
@@ -166,6 +168,17 @@ const CSS = `
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   touch-action: none; overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+}
+/*
+ * 【必须放在 .rt-wrap 规则【之后】】
+ *
+ * 媒体查询【不增加优先级】。写在前面的话，同优先级的
+ * .rt-wrap { --side-w: 0px } 在后面，永远覆盖它 ——
+ * 表现是"宽屏上侧栏怎么都不出现"，而且查不出原因，
+ * 因为两个规则分开看都是对的。
+ */
+@media (min-width: 1200px) {
+  .rt-wrap { --side-w: 190px; }
 }
 .rt-bar {
   display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
@@ -196,11 +209,65 @@ const CSS = `
   gap: var(--gutter);
   padding: 0 var(--gutter);
 }
+/*
+ * 左右侧栏。现在是【可见的占位框】—— 让"这里以后要放东西"
+ * 这件事在界面上是看得见的，而不是靠记忆。
+ *
+ * 宽度由 --side-w 控制，窄屏是 0（不占地方），
+ * 宽屏才展开 —— 手机上本来就没空间，硬留两栏反而玩不了。
+ */
 .rt-side { min-width: 0; overflow: hidden; }
+.rt-side-ph {
+  height: 100%; border: 1px dashed #1e1e28; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: #2c2c38; font-size: 11px; letter-spacing: 0.1em;
+}
 .rt-stage { display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
 .rt-stage canvas {
   image-rendering: pixelated; image-rendering: crisp-edges; display: block;
 }
+/*
+ * 【控件必须盖在 .rt-wrap 之上】
+ *
+ * .rt-wrap 是 position:fixed + z-index:200 + 不透明背景。
+ * 摇杆和按钮是 position:fixed 但【没有 z-index】——
+ * CSS 里 z-index:auto 低于任何有具体值的，所以它们被画在
+ * 那块不透明背景【下面】：
+ *
+ *   元素在 DOM 里、事件也绑好了、就是【看不见】。
+ *
+ * 手机上表现是"摇杆和攻击键都没有了"，而桌面用键盘玩
+ * 完全发现不了 —— 因为键盘不依赖这几个按钮。
+ */
+.rt-wheel, .rt-attack, .rt-heavy { z-index: 210; }
+
+/*
+ * 转屏提示。
+ *
+ * 【为什么竖屏要挡一下】—— 这是个靠左右走位躲招的动作游戏。
+ * 竖屏的横向空间只有横屏的一半，怪从侧面来的时候根本来不及躲。
+ * 而且摇杆和攻击键在竖屏下会占掉下半屏。
+ *
+ * 但【不强制】：玩家想竖着玩就竖着玩，给一个按钮能关掉。
+ * 强制转屏在浏览器里也做不到（没有屏幕方向锁的权限）。
+ */
+.rt-rotate {
+  position: fixed; inset: 0; z-index: 400; display: none;
+  background: #07070b;
+  flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  text-align: center; padding: 32px;
+}
+/* 只在【竖屏 + 触屏】时出现。由 JS 加 .show */
+.rt-rotate.show { display: flex; }
+.rt-rotate-icon { font-size: 44px; color: #d8a848; transform: rotate(90deg); }
+.rt-rotate-text { font-size: 15px; line-height: 1.9; color: #8a8a96; }
+.rt-rotate-text b { color: #d5d2ca; font-weight: normal; }
+.rt-rotate button {
+  padding: 9px 20px; background: #16161d; border: 1px solid #2c2c38;
+  border-radius: 6px; color: #6b6b7a; font-family: inherit; font-size: 12.5px;
+  cursor: pointer;
+}
+.rt-rotate button:hover { border-color: #d8a848; color: #b9b9c4; }
 .rt-wheel {
   position: fixed; left: calc(env(safe-area-inset-left) + 18px);
   bottom: calc(env(safe-area-inset-bottom) + 18px);
@@ -272,6 +339,9 @@ const CSS = `
    */
   grid-column: 2;
   min-width: 0;
+  /* 【居中对齐】—— 日志块和舞台同宽，文字居中放在里面 */
+  align-items: center;
+  text-align: center;
   /*
    * 【高度必须固定】—— 这是之前画面"跳"的根因。
    *
@@ -635,8 +705,17 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   midEl.className = 'rt-mid';
   const sideL = document.createElement('div');
   sideL.className = 'rt-side';
+  const phL = document.createElement('div');
+  phL.className = 'rt-side-ph';
+  phL.textContent = '预留';
+  sideL.appendChild(phL);
+
   const sideR = document.createElement('div');
   sideR.className = 'rt-side';
+  const phR = document.createElement('div');
+  phR.className = 'rt-side-ph';
+  phR.textContent = '预留';
+  sideR.appendChild(phR);
   const logRow = document.createElement('div');
   logRow.className = 'rt-logrow';
   const logEl = document.createElement('div');
@@ -677,15 +756,71 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   storyInner.className = 'rt-story-inner';
   storyEl.appendChild(storyInner);
 
-  wrap.append(bar, midEl, logRow, hintBar);
-  root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl);
+  /* 转屏提示 —— 只在竖屏触屏设备上出现，可以关掉 */
+  const rotateEl = document.createElement('div');
+  rotateEl.className = 'rt-rotate';
+  const rotIcon = document.createElement('div');
+  rotIcon.className = 'rt-rotate-icon';
+  rotIcon.textContent = '▭';
+  const rotText = document.createElement('div');
+  rotText.className = 'rt-rotate-text';
+  rotText.innerHTML =
+    '<b>横过手机</b><br>这是个靠左右走位躲招的游戏，' +
+    '<br>竖屏的横向空间不够躲。';
+  const rotBtn = document.createElement('button');
+  rotBtn.type = 'button';
+  rotBtn.textContent = '继续竖屏玩';
+  rotateEl.append(rotIcon, rotText, rotBtn);
 
+  wrap.append(bar, midEl, logRow, hintBar);
+  root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl, rotateEl);
+
+  /*
+   * 【触屏才显示摇杆和按钮】
+   *
+   * 注意上面那条 CSS：这三个控件的 z-index 必须高于 .rt-wrap，
+   * 否则会被那块不透明背景盖住 —— 元素在、事件也绑好了，就是看不见。
+   */
   const coarse = window.matchMedia('(pointer: coarse)').matches;
   if (coarse) {
     wheel.classList.add('on');
     attackBtn.classList.add('on');
-  heavyBtn.classList.add('on');
+    heavyBtn.classList.add('on');
   }
+
+  /*
+   * 转屏提示：只在【触屏 + 竖屏】时弹。
+   *
+   * 关掉之后记在 sessionStorage 里 —— 玩家已经表态过一次了，
+   * 转来转去再弹就是骚扰。但只记这一场（不是 localStorage）：
+   * 下次打开重新问一次是合理的，因为他可能换了设备方向。
+   */
+  const ROTATE_KEY = 'dreamloop.rt.portrait-ok';
+  const wantsLandscape = (): boolean =>
+    coarse && window.innerHeight > window.innerWidth;
+
+  function syncRotateHint(): void {
+    let dismissed = false;
+    try {
+      dismissed = sessionStorage.getItem(ROTATE_KEY) === '1';
+    } catch {
+      // 隐私模式下 sessionStorage 会抛 —— 那就每次都提示，
+      // 总比因为读不到而崩掉好
+      dismissed = false;
+    }
+    rotateEl.classList.toggle('show', wantsLandscape() && !dismissed);
+  }
+
+  rotBtn.addEventListener('click', () => {
+    try {
+      sessionStorage.setItem(ROTATE_KEY, '1');
+    } catch {
+      /* 存不了就算了，本次会话内也不再提示 */
+    }
+    rotateEl.classList.remove('show');
+  });
+
+  syncRotateHint();
 
   /* ── 量出可用空间，再决定房间多大、放大几倍 ── */
 
@@ -1406,7 +1541,11 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     raf = requestAnimationFrame(frame);
   }
 
-  const onResize = (): void => fitCanvas();
+  const onResize = (): void => {
+    fitCanvas();
+    // 转过来了就把提示收掉
+    syncRotateHint();
+  };
   window.addEventListener('resize', onResize);
 
   void Promise.all([
@@ -1459,6 +1598,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     attackBtn.remove();
     heavyBtn.remove();
     storyEl.remove();
+    rotateEl.remove();
     midEl.remove();
     logRow.remove();
     stage.remove();
