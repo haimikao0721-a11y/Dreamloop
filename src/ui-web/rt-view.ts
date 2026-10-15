@@ -93,12 +93,48 @@ const MAX_ROWS = 21;
  * （实测量到 240，视口其实是 390）。用视口尺寸加一个固定估值，
  * 结果是可预测的；真正的适配交给 fitCanvas 按实测尺寸兜底。
  */
+/**
+ * 决定画布放大几倍。
+ *
+ * 【整数倍是首选，但不是无条件】
+ * 非整数倍会让像素大小不均匀 —— 一个像素忽大忽小是像素风最难看
+ * 的失败方式。所以能整数就整数。
+ *
+ * 【但浪费时间太多时就不值了】
+ * 手机上可用高度往往是 1.89 倍，floor 之后变成 1 倍 ——
+ * 【浪费掉 47% 的屏幕】，游戏缩在中间一小块，上下全是空的。
+ * 像素均匀是审美，浪费一半屏幕是可用性问题，后者更严重。
+ *
+ * 阈值取 0.85：整数倍至少要用到 85% 的空间才值得。
+ *   1.89 → floor 1，只用 53% → 用 1.89
+ *   2.05 → floor 2，用到 98% → 用 2
+ *
+ * 【缩不下去时也必须允许小数】—— 曾经写成 Math.max(1, Math.floor(s))：
+ * 画布比可用空间还大时 floor 得到 0，max(1, 0) 又拉回 1，
+ * 于是怎么也缩不下去，房间右侧连人带怪被挤出屏幕，
+ * 表现是"这个敌人不见了"。宁可像素不齐，也不能有东西看不见。
+ */
+export function pickScale(s: number): number {
+  if (s < 1) return Math.max(0.2, s);
+  const whole = Math.floor(s);
+  return whole / s >= 0.85 ? whole : s;
+}
 export function planRoom(viewportW: number, viewportH: number): RoomPlan {
   // 留一点余量：视口尺寸和实际可用空间不一定完全一致
   // （安全区、滚动条、状态栏估错），宁可房间小一号也不要溢出
   const availW = Math.max(120, viewportW - 8);
-  // 减掉上下两条：状态栏 ≈ 34px，底部提示 ≈ 22px，再加余量
-  const availH = Math.max(120, viewportH - 100);
+  /*
+   * 减掉上下占掉的固定高度：状态栏 ≈ 34、日志栏 ≈ 92、提示 ≈ 24~46，
+   * 再加余量。
+   *
+   * 【这个数必须跟着布局改】—— 原来写的是 100，只有状态栏和提示。
+   * 加了 84px 的日志栏之后没跟着改，于是 planRoom 估出来的房间
+   * 按估算放得下、按真实舞台放不下，fitCanvas 只能缩，
+   * 而缩的时候又要取整数倍 —— 结果手机上浪费掉 47% 的高度。
+   *
+   * 宁可估小一点：房间小一号只是没那么气派，估大了会缩不下去。
+   */
+  const availH = Math.max(120, viewportH - 200);
 
   // 从大缩放往小试：缩放越大，同样空间里能放的格子越少。
   // 手机上 6 倍缩放只剩 4 格宽，没法玩，所以一路降到装得下为止。
@@ -117,6 +153,13 @@ export function planRoom(viewportW: number, viewportH: number): RoomPlan {
 
 const CSS = `
 .rt-wrap {
+  /*
+   * 【左右侧栏】以后要放面板（背包、地图、状态），现在先留出来。
+   * 改这一个数就能开 —— 舞台和日志都用同一个变量，
+   * 所以两者永远对齐，不会一个宽一个窄。
+   */
+  --side-w: 0px;
+  --gutter: 12px;
   position: fixed; inset: 0; z-index: 200;
   background: #07070b; color: #b9b9c4;
   display: flex; flex-direction: column;
@@ -140,7 +183,21 @@ const CSS = `
   color: #b9b9c4; font-family: inherit; font-size: 12px; cursor: pointer;
 }
 .rt-bar button:hover { border-color: #d8a848; }
-.rt-stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+/*
+ * 中段：左栏 | 舞台 | 右栏。
+ *
+ * 【用 grid 而不是 flex】—— 左右两栏要能各自独立地开和关，
+ * 而且舞台必须严格居中（flex 的 space-between 在只有一栏时会歪）。
+ */
+.rt-mid {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+  gap: var(--gutter);
+  padding: 0 var(--gutter);
+}
+.rt-side { min-width: 0; overflow: hidden; }
+.rt-stage { display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
 .rt-stage canvas {
   image-rendering: pixelated; image-rendering: crisp-edges; display: block;
 }
@@ -195,12 +252,44 @@ const CSS = `
  * 只显示最近几行：这是"刚才发生了什么"，不是聊天记录。
  * 老行渐隐 —— 一眼能看出哪句是刚出现的。
  */
+/*
+ * 日志行：和舞台用【同一个三列网格】，所以左右留白一致，永远对齐。
+ */
+.rt-logrow {
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+  gap: var(--gutter);
+  padding: 0 var(--gutter);
+}
 .rt-log {
+  /*
+   * 【必须显式指定列】—— logRow 是三列网格（左栏 | 中 | 右栏），
+   * 而这里只 append 了日志一个元素，不指定的话它落在【第一列】，
+   * 也就是 --side-w 那一列 —— 宽度 0。
+   *
+   * 症状是"日志栏是空的"：元素在、文字也在 DOM 里，
+   * 只是宽度是 0。看截图完全看不出是布局问题。
+   */
+  grid-column: 2;
+  min-width: 0;
+  /*
+   * 【高度必须固定】—— 这是之前画面"跳"的根因。
+   *
+   * 行数一变（或者长行折成两行），日志高度就变，把舞台挤小，
+   * fitCanvas 重新算缩放，整个画面跟着跳一下。
+   *
+   * 固定高度 + 不换行截断 = 内容再怎么变，外面这一圈永远不动。
+   */
+  height: 84px; flex: none; overflow: hidden;
   display: flex; flex-direction: column; justify-content: flex-end;
-  gap: 3px; padding: 0 14px 8px; min-height: 62px;
+  gap: 3px; padding-bottom: 8px;
   font-size: 12.5px; line-height: 1.5; pointer-events: none;
 }
-.rt-log-line { color: #4a4a56; transition: color 120ms linear; }
+.rt-log-line {
+  color: #4a4a56; transition: color 120ms linear;
+  /* 长行截断而不是折行 —— 折行会撑高，高度就不固定了 */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .rt-log-line.tone-info { color: #8a8a96; }
 .rt-log-line.tone-danger { color: #c4553a; }
 .rt-log-line.tone-gain { color: #d8a848; }
@@ -538,12 +627,27 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   exitBtn.textContent = '返回主菜单';
   bar.append(stat, hint, exitBtn);
 
-  const stage = document.createElement('div');
-  stage.className = 'rt-stage';
-  // canvas 先不建 —— 要等量完 stage 的真实尺寸才能决定画多大（见 planRoom）
-
+  /*
+   * 【左右两栏现在就建好，只是宽度是 0】——
+   * 等要用的时候改 --side-w 一个数就行，不用动 DOM。
+   */
+  const midEl = document.createElement('div');
+  midEl.className = 'rt-mid';
+  const sideL = document.createElement('div');
+  sideL.className = 'rt-side';
+  const sideR = document.createElement('div');
+  sideR.className = 'rt-side';
+  const logRow = document.createElement('div');
+  logRow.className = 'rt-logrow';
   const logEl = document.createElement('div');
   logEl.className = 'rt-log';
+  const stage = document.createElement('div');
+  stage.className = 'rt-stage';
+  midEl.append(sideL, stage, sideR);
+  logRow.append(logEl);
+  // canvas 先不建 —— 要等量完 stage 的真实尺寸才能决定画多大（见 planRoom）
+
+
 
   const hintBar = document.createElement('div');
   hintBar.className = 'rt-hint';
@@ -573,7 +677,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   storyInner.className = 'rt-story-inner';
   storyEl.appendChild(storyInner);
 
-  wrap.append(bar, stage, logEl, hintBar);
+  wrap.append(bar, midEl, logRow, hintBar);
   root.append(style, wrap, wheel, attackBtn, heavyBtn, storyEl);
 
   const coarse = window.matchMedia('(pointer: coarse)').matches;
@@ -1229,17 +1333,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
       (stage.clientHeight - 4) / canvas.height,
     );
 
-    /*
-     * 能用整数倍就用整数倍 —— 非整数倍会让像素大小不均匀，
-     * 一个像素忽大忽小是像素风最难看的失败方式。
-     *
-     * 【但放不下时必须允许小数】。
-     * 曾经写成 Math.max(1, Math.floor(s))：当画布比可用空间还大时
-     * floor 得到 0，max(1, 0) 又把它拉回 1 —— 于是怎么也缩不下去，
-     * 房间右侧连人带怪被挤到屏幕外面，表现就是"这个敌人不见了"。
-     * 宁可像素稍微不齐，也不能有东西看不见。
-     */
-    const scale = s >= 1 ? Math.floor(s) : Math.max(0.2, s);
+    const scale = pickScale(s);
     canvas.style.width = `${canvas.width * scale}px`;
     canvas.style.height = `${canvas.height * scale}px`;
   }
@@ -1342,6 +1436,13 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   );
 
   fitCanvas();
+  /*
+   * 【先画一次再进循环】—— 开局的日志行是设置阶段写进去的，
+   * 等第一帧才画的话，从挂载到第一帧之间那块是空的。
+   * 正常情况只有十几毫秒，但首帧要等字体和图片，可能到几百毫秒 ——
+   * 那段时间玩家看到的是【一个有框没字】的日志栏。
+   */
+  renderLog();
   raf = requestAnimationFrame(frame);
 
   exitBtn.addEventListener('click', () => {
@@ -1358,6 +1459,9 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     attackBtn.remove();
     heavyBtn.remove();
     storyEl.remove();
+    midEl.remove();
+    logRow.remove();
+    stage.remove();
     logEl.remove();
     style.remove();
   };

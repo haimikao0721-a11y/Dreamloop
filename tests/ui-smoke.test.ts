@@ -777,6 +777,22 @@ describe('实时层原型', () => {
        */
       expect(canvas?.height).toBe(plan.rows * TILE + TILE);
 
+      /*
+       * 缩放选择。整数倍是首选，但【浪费太多时就不值了】——
+       * 手机上可用高度常常是 1.89 倍，floor 成 1 会浪费 47% 的屏幕。
+       */
+      const { pickScale } = await import('../src/ui-web/rt-view.js');
+      expect(pickScale(2.05), '整数倍够接近时该用整数').toBe(2);
+      // 2.9 floor 到 2 只用 69%，浪费超过 15% → 用小数
+      expect(pickScale(2.9)).toBeCloseTo(2.9, 5);
+      expect(pickScale(2.2), 'floor 到 2 用到 91%，划算').toBe(2);
+      expect(pickScale(1.89), 'floor 到 1 只用 53%，浪费太多').toBeCloseTo(1.89, 5);
+      expect(pickScale(1.2), 'floor 到 1 只用 83%，也不划算').toBeCloseTo(1.2, 5);
+      expect(pickScale(0.6), '放不下时允许小数').toBeCloseTo(0.6, 5);
+      expect(pickScale(0.05), '再小也有下限，不能缩成看不见').toBe(0.2);
+      // 1.01 floor 到 1 用到 99%，划算 → 用整数
+      expect(pickScale(1.01)).toBe(1);
+
       // 画面必须真的占地方，不能是一条小带子
       expect(plan.scale, '缩放太小，玩家会以为什么都没画').toBeGreaterThanOrEqual(1);
       expect(plan.cols).toBeGreaterThanOrEqual(11);
