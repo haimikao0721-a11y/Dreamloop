@@ -59,6 +59,13 @@ jobs:
       - name: 类型检查 + 构建 + 全部测试
         run: pnpm verify
 
+      # GitHub 官方要求的步骤：读取 Pages 配置（base_path / origin）。
+      # 本项目用相对路径 base（见 vite.config.ts），其实用不到 base_path，
+      # 但它同时会确保 Pages 处于已启用状态 —— 漏掉它时
+      # deploy-pages 会报 404「Failed to create deployment」。
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
       - name: 上传构建产物
         uses: actions/upload-pages-artifact@v3
         with:
