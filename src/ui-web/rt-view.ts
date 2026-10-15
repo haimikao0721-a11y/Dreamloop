@@ -43,6 +43,13 @@ const ROOM_H = 15;
 /** 精灵尺寸，和 tools/gen-assets.mjs 里的一致 */
 const SPR_W = 16;
 const SPR_H = 24;
+/**
+ * 墙的顶面高度 = 一格。
+ *
+ * 【画布顶部要多留这么高】—— 最上面那排墙的顶面画在它上方一格，
+ * 不留余量的话会被裁掉，房间顶部看起来是平的。
+ */
+const WALL_TOP_H = TILE;
 /** 移动动画每几帧换一次图。8 tick ≈ 7.5fps 的走路节奏 */
 const WALK_FRAME_TICKS = 8;
 
@@ -520,7 +527,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
   const plan = planRoom(window.innerWidth, window.innerHeight);
   const canvas = document.createElement('canvas');
   canvas.width = plan.cols * TILE;
-  canvas.height = plan.rows * TILE;
+  canvas.height = plan.rows * TILE + WALL_TOP_H;
   canvas.style.width = `${plan.cols * TILE * plan.scale}px`;
   canvas.style.height = `${plan.rows * TILE * plan.scale}px`;
   stage.appendChild(canvas);
@@ -744,6 +751,25 @@ export function startRtPrototype(root: HTMLElement): () => void {
     const px = Math.round(e.body.x - SPR_W / 2);
     const py = Math.round(e.body.y + e.body.hh - SPR_H);
 
+    if (ctx !== null) {
+      /*
+       * 脚下的影子。
+       *
+       * 【有影子和没影子，是"站着"和"浮着"的区别】—— 以撒式视角
+       * 里角色比格子高，没有影子的话会显得贴在画面上而不是站在地上。
+       * 椭圆用 arc + 缩放画，兼容性比 ellipse() 好（测试环境里的
+       * 假 canvas 不一定有 ellipse）。
+       */
+      ctx.save();
+      ctx.translate(e.body.x, e.body.y + e.body.hh - 1);
+      ctx.scale(1, 0.32);
+      ctx.beginPath();
+      ctx.arc(0, 0, e.body.hw + 3, 0, Math.PI * 2);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(4,4,8,0.5)';
+      ctx.fill();
+    }
+
     if (usable(sheet)) {
       ctx?.drawImage(sheet, frame * SPR_W, 0, SPR_W, SPR_H, px, py, SPR_W, SPR_H);
       return;
@@ -803,25 +829,40 @@ export function startRtPrototype(root: HTMLElement): () => void {
     if (ctx === null) return;
     const { map } = state;
 
-    // 理智归零 → 整张地图换配色。这是第 3 步最直观的反馈：
-    // 玩家不用看数字就知道自己掉进去了
+    // 理智归零 → 整张地图换配色。玩家不用看数字就知道自己掉进去了
     const zero = isZeroState(state.san);
     const skin = zero ? tilesZero : tiles;
 
+    /*
+     * 先铺底，再把整个坐标系下移 WALL_TOP_H。
+     *
+     * 这样下面的绘制代码全部用【世界坐标】，不用到处 +16。
+     * 顶部那一格留给最上面那排墙的顶面。
+     */
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = zero ? '#0b0505' : '#07070b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(1, 0, 0, 1, 0, WALL_TOP_H);
+
+    const isWallTile = (tx: number, ty: number): boolean => {
+      if (tx < 0 || ty < 0 || tx >= map.w || ty >= map.h) return true;
+      return map.tiles[ty * map.w + tx] !== TILE_FLOOR;
+    };
+
+    /* 地面。只画不是墙的格子 —— 墙走下面的立体通道 */
     for (let ty = 0; ty < map.h; ty++) {
       for (let tx = 0; tx < map.w; tx++) {
-        const solid = map.tiles[ty * map.w + tx] !== TILE_FLOOR;
-        const img = solid ? skin.wall : skin.floor;
-        if (usable(img)) {
-          ctx.drawImage(img, tx * TILE, ty * TILE, TILE, TILE);
+        if (isWallTile(tx, ty)) continue;
+        if (usable(skin.floor)) {
+          ctx.drawImage(skin.floor, tx * TILE, ty * TILE, TILE, TILE);
         } else {
-          ctx.fillStyle = zero ? (solid ? '#331818' : '#1a0e0e') : (solid ? '#272733' : '#12121a');
+          ctx.fillStyle = zero ? '#1a0e0e' : '#12121a';
           ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
         }
       }
     }
 
-    // 光源的光晕。画在地形之上、实体之下 —— 照亮地面，但不盖住人
+    /* 光晕。在地面之上、立体物之下 —— 照亮地面，但不盖住人 */
     for (const e of state.entities) {
       const light = e.light;
       if (!e.alive || light === undefined || light.fuel === 0) continue;
@@ -839,45 +880,83 @@ export function startRtPrototype(root: HTMLElement): () => void {
       );
     }
 
-    // 先画地面上的扇形，再画实体 —— 判定框不该盖住人
+    /* 地面上的扇形判定。也是地贴，在立体物之下 */
     for (const e of state.entities) if (e.alive) drawSwing(e);
 
-    for (const e of state.entities) {
-      if (!e.alive) continue;
-      if (e.kind === 'light') {
-        // 光源用素材画。没有素材就【不画】—— 绝不退回色块：
-        // 一个青色的方块在地上会被当成怪物，比不画还糟
-        const fuel = e.light?.fuel ?? -1;
-        const art = fuel < 0 ? lightArt.lamp : lightArt.candle;
-        if (usable(art)) {
-          ctx.drawImage(
-            art,
-            Math.round(e.body.x - TILE / 2),
-            Math.round(e.body.y - TILE / 2),
-            TILE,
-            TILE,
-          );
+    /*
+     * 【关键：逐行绘制】—— 这一行的墙，然后这一行的实体。
+     *
+     * 顺序就是深度：y 越大越靠近镜头。必须一行一行来，
+     * 不能"先画所有墙、再画所有人"—— 那样站在墙上方的角色会盖住墙，
+     * 而正确的结果是墙的顶面挡住他的脚。
+     *
+     * 墙的顶面上移一格画在正面之上，这是以撒式立体感的全部来源。
+     * 只在【上方不是墙】时才画，否则一排竖着的墙会出现阶梯。
+     */
+    for (let ty = 0; ty < map.h; ty++) {
+      for (let tx = 0; tx < map.w; tx++) {
+        if (!isWallTile(tx, ty)) continue;
+        const px = tx * TILE;
+        const py = ty * TILE;
+
+        if (usable(skin.wall)) {
+          ctx.drawImage(skin.wall, px, py, TILE, TILE);
+        } else {
+          ctx.fillStyle = zero ? '#331818' : '#272733';
+          ctx.fillRect(px, py, TILE, TILE);
         }
-        continue;
+
+        if (!isWallTile(tx, ty - 1)) {
+          if (usable(skin.wallTop)) {
+            ctx.drawImage(skin.wallTop, px, py - TILE, TILE, TILE);
+          } else {
+            ctx.fillStyle = zero ? '#42201f' : '#343442';
+            ctx.fillRect(px, py - TILE, TILE, TILE);
+          }
+        }
       }
-      if (e.kind === 'item') {
-        // 掉落物：画一个跳动的光点。素材还没有，先用形状顶上 ——
-        // 关键是玩家要能看见"这里有东西"
-        const t = (state.tick % 60) / 60;
-        const r = 3 + Math.sin(t * Math.PI * 2) * 1.2;
-        ctx.beginPath();
-        ctx.arc(e.body.x, e.body.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = '#d8a848';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(216,168,72,0.4)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(e.body.x, e.body.y, r + 3, 0, Math.PI * 2);
-        ctx.stroke();
-        continue;
+
+      // 这一行的实体。用【身体中心】所在的行排序 —— 遮挡看的就是脚在哪
+      for (const e of state.entities) {
+        if (!e.alive) continue;
+        if (Math.floor(e.body.y / TILE) !== ty) continue;
+
+        if (e.kind === 'light') {
+          // 光源用素材画。没有素材就【不画】—— 绝不退回色块：
+          // 一个青色的方块在地上会被当成怪物，比不画还糟
+          const fuel = e.light?.fuel ?? -1;
+          const art = fuel < 0 ? lightArt.lamp : lightArt.candle;
+          if (usable(art)) {
+            ctx.drawImage(
+              art,
+              Math.round(e.body.x - TILE / 2),
+              Math.round(e.body.y - TILE / 2),
+              TILE,
+              TILE,
+            );
+          }
+          continue;
+        }
+
+        if (e.kind === 'item') {
+          // 掉落物：跳动的光点。关键是玩家要能看见"这里有东西"
+          const t = (state.tick % 60) / 60;
+          const r = 3 + Math.sin(t * Math.PI * 2) * 1.2;
+          ctx.beginPath();
+          ctx.arc(e.body.x, e.body.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = '#d8a848';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(216,168,72,0.4)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(e.body.x, e.body.y, r + 3, 0, Math.PI * 2);
+          ctx.stroke();
+          continue;
+        }
+
+        drawEntity(e);
+        drawTelegraph(e);
       }
-      drawEntity(e);
-      drawTelegraph(e);
     }
 
     // 受击闪
@@ -901,7 +980,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
     }
   }
 
-  const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
+  const tiles: { floor?: HTMLImageElement; wall?: HTMLImageElement; wallTop?: HTMLImageElement } = {};
   /** 光源的素材：壁灯（拿不走）和蜡烛（地上的）。实体没精灵，单独管 */
   const lightArt: { lamp?: HTMLImageElement; candle?: HTMLImageElement } = {};
   /**
@@ -910,7 +989,7 @@ export function startRtPrototype(root: HTMLElement): () => void {
    * 【同一批瓦片，另一套调色板】—— 见 tools/gen-assets.mjs。
    * 所以"归零换风格"不用画两套图，多加载两份 PNG 就够了。
    */
-  const tilesZero: { floor?: HTMLImageElement; wall?: HTMLImageElement } = {};
+  const tilesZero: { floor?: HTMLImageElement; wall?: HTMLImageElement; wallTop?: HTMLImageElement } = {};
 
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
@@ -1007,13 +1086,17 @@ export function startRtPrototype(root: HTMLElement): () => void {
   void Promise.all([
     loadImage('map/floor.png'),
     loadImage('map/wall.png'),
+    loadImage('map/wall_top.png'),
     loadImage('map/zero/floor.png'),
     loadImage('map/zero/wall.png'),
-  ]).then(([f, w, zf, zw]) => {
+    loadImage('map/zero/wall_top.png'),
+  ]).then(([f, w, wt, zf, zw, zwt]) => {
     tiles.floor = f;
     tiles.wall = w;
+    tiles.wallTop = wt;
     tilesZero.floor = zf;
     tilesZero.wall = zw;
+    tilesZero.wallTop = zwt;
   });
   void Promise.all([loadImage('map/wall_lamp.png'), loadImage('map/candle.png')]).then(
     ([lamp, candle]) => {

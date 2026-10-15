@@ -768,7 +768,14 @@ describe('实时层原型', () => {
       // 之前写死过，结果手机竖屏上只有 1 倍缩放，玩家进去看到一片黑。
       const plan = planRoom(window.innerWidth, window.innerHeight);
       expect(canvas?.width).toBe(plan.cols * TILE);
-      expect(canvas?.height).toBe(plan.rows * TILE);
+      /*
+       * 高度【多一格】—— 顶部那格留给最上面那排墙的顶面。
+       *
+       * 以撒式立体感靠的就是墙的顶面（它画在墙上方的位置），
+       * 不留余量的话最上面那排会被裁掉，房间顶部看起来是平的。
+       * 这不是 bug，是画布尺寸的一部分。
+       */
+      expect(canvas?.height).toBe(plan.rows * TILE + TILE);
 
       // 画面必须真的占地方，不能是一条小带子
       expect(plan.scale, '缩放太小，玩家会以为什么都没画').toBeGreaterThanOrEqual(1);

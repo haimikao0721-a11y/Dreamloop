@@ -235,6 +235,13 @@ export const NEUTRAL_INPUT: InputState = {
 
 export const TILE_FLOOR = 0;
 export const TILE_WALL = 1;
+/**
+ * 楼梯。走上去下一层。
+ *
+ * 【建筑在房间清空之后才"开"】—— 地形一直在，但要清空才生效。
+ * 这样"打不完就走"不是一个选项，玩家不会跳过战斗。
+ */
+export const TILE_STAIRS = 3;
 
 export interface TileMap {
   readonly w: number;

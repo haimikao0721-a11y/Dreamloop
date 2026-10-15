@@ -222,6 +222,39 @@ const WALL = [
   'kkkkkkkkkkkkkkkk',
 ];
 
+/**
+ * 墙的【顶面】。
+ *
+ * 【为什么要单独一张】—— 这是"以撒式立体感"的全部来源。
+ *
+ * 纯俯视的墙和地板都是平的，看起来像一张纸上的格子。
+ * 以撒 / 元气骑士的做法是：**地面完全不倾斜**，立体感来自
+ * 你能看到墙的【上方】—— 大脑一看到顶面就自动读出"这是个立体的箱子"。
+ *
+ * 渲染时把这张图往【上】偏移一格画在墙的正面之上，
+ * 但只在"这格墙的上方不是墙"时才画 —— 否则一排竖着的墙会出现阶梯。
+ *
+ * 光从上方来：前缘（贴着玩家的那一侧）最亮，后缘最暗。
+ */
+const WALL_TOP = [
+  'dddddddddddddddd',
+  'dlllllllllllllld',
+  'dlllslllllllllld',
+  'dllllllllllsllld',
+  'dlllllllllllllld',
+  'dlslllllllllllld',
+  'dlllllllllllllld',
+  'dllllllllsllllld',
+  'dlllllllllllllld',
+  'dllllsllllllllld',
+  'dlllllllllllllld',
+  'dllllllllllsllld',
+  'dlllllllllllllld',
+  'dlllllllllllllld',
+  'eeeeeeeeeeeeeeee',
+  'dddddddddddddddd',
+];
+
 /** 门：门框 + 竖板门身 + 门把手。要能一眼和墙区分 */
 const DOOR = [
   'ssssssssssssssss',
@@ -284,22 +317,22 @@ const CANDLE = [
 
 /** 固定光源：墙上的烛台。拿不走，所以做成"长在墙上"的样子 */
 const WALL_LAMP = [
-  'kkkkkkkkkkkkkkkk',
-  'kkkkkkkkkkkkkkkk',
-  'kkkkkkkCCkkkkkkk',
-  'kkkkkkCcCCkkkkkk',
-  'kkkkkkcCCckkkkkk',
-  'kkkkkkkccckkkkkk',
-  'kkkkkkkkwkkkkkkk',
-  'kkkkkkkbbbkkkkkk',
-  'kkkkkkkbbbkkkkkk',
-  'kkkkkkbbbbbkkkkk',
-  'kkkkkssssssskkkk',
-  'kkkkkssssssskkkk',
-  'kkkkkkkkkkkkkkkk',
-  'kkkkkkkkkkkkkkkk',
-  'kkkkkkkkkkkkkkkk',
-  'kkkkkkkkkkkkkkkk',
+  '................',
+  '................',
+  '.......CC.......',
+  '......CcCC......',
+  '......cCCc......',
+  '.......ccc......',
+  '........w.......',
+  '.......bbb......',
+  '.......bbb......',
+  '......bbbbb.....',
+  '.....sssssss....',
+  '.....sssssss....',
+  '................',
+  '................',
+  '................',
+  '................',
 ];
 
 /* ══════════════════════════════════════════════════════════════
@@ -462,6 +495,8 @@ const TILES = {
   floor: FLOOR,
   floor_stained: FLOOR_STAINED,
   wall: WALL,
+  // 墙的顶面。渲染时上移一格画在正面之上 —— 立体感就是它给的
+  wall_top: WALL_TOP,
   door: DOOR,
   stairs: STAIRS,
   candle: CANDLE,

@@ -38,3 +38,6 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+
+# 视角对比图：决策用的，不是素材。用 node tools/perspective-demo.mjs 重新生成
+assets/_perspective/
