@@ -512,6 +512,97 @@ function overlay(body, cells) {
   return out.map((row) => row.join(''));
 }
 
+/* ── 敌人 ── */
+
+/**
+ * 爬行物：矮、多足、看不清脸。
+ * 故意画得【不像人】—— 它逼玩家走位，所以视觉上要让人想躲开。
+ * 身体压在画框下半部分，看起来才"贴地"。
+ */
+const CRAWLER = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '....kmmmmmmk....',
+  '...kmmkkkkmmk...',
+  '...kmkmmmmkmk...',
+  '...kmmkkkkmmk...',
+  '...kmmmmmmmmk...',
+  '....kmmmmmmk....',
+  '.....kkkkkk.....',
+  '...k..k..k..k...',
+  '..k...k..k...k..',
+  '..k...k..k...k..',
+  '.k....k..k....k.',
+  '................',
+  '................',
+  '................',
+];
+
+/**
+ * 护工：高、宽、厚。
+ * 和玩家角色拉开体型差 —— 玩家一眼要能看出"这个不好惹"。
+ */
+const ORDERLY = [
+  '................',
+  '.....kkkkkk.....',
+  '....kkkkkkkk....',
+  '....kppppppk....',
+  '....kpkppkpk....',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '......kppk......',
+  '....dddddddd....',
+  '...dddddddddd...',
+  '..dddddddddddd..',
+  '..ddsddddddsdd..',
+  '..ddsddddddsdd..',
+  '..dddddddddddd..',
+  '..dddddddddddd..',
+  '...dddddddddd...',
+  '...dddddddddd...',
+  '....dddddddd....',
+  '....dddddddd....',
+  '....dd....dd....',
+  '....dd....dd....',
+  '....dd....dd....',
+  '...ddd....ddd...',
+  '...kkk....kkk...',
+];
+
+/** 爬行物的扑击：整个身体前倾，武器就是它的嘴 */
+const CRAWLER_LUNGE = {
+  startup: [
+    [8, 12, 'm'], [9, 13, 'm'], [8, 14, 'm'], [7, 13, 'm'],
+  ],
+  active: [
+    [12, 11, 'm'], [13, 12, 'C'], [13, 13, 'C'], [12, 14, 'm'], [11, 13, 'm'],
+  ],
+  recovery: [
+    [4, 17, 'm'], [3, 18, 'm'],
+  ],
+};
+
+/** 护工的下砸：抬手很高、砸下来很重 —— 起手最长，最该被读出来 */
+const ORDERLY_SLAM_SWING = {
+  startup: [
+    [2, 4, 'c'], [1, 5, 'c'], [2, 6, 'C'], [3, 7, 'c'], [2, 8, 'c'],
+  ],
+  active: [
+    [12, 12, 'c'], [13, 13, 'C'], [14, 14, 'C'], [13, 15, 'c'], [12, 16, 'c'],
+  ],
+  recovery: [
+    [11, 19, 'c'], [12, 20, 'C'], [12, 21, 'c'],
+  ],
+};
+
 /** 角色 → 一组命名的帧 */
 const CHARACTERS = {
   dream_archivist: {
@@ -529,6 +620,22 @@ const CHARACTERS = {
     attack_startup: overlay(NURSE, SWINGS.startup),
     attack_active: overlay(NURSE, SWINGS.active),
     attack_recovery: overlay(NURSE, SWINGS.recovery),
+  },
+  crawler: {
+    idle: CRAWLER,
+    walk_a: overlay(CRAWLER, [[4, 18, 'm'], [11, 18, '.']]),
+    walk_b: overlay(CRAWLER, [[4, 18, '.'], [11, 18, 'm']]),
+    attack_startup: overlay(CRAWLER, CRAWLER_LUNGE.startup),
+    attack_active: overlay(CRAWLER, CRAWLER_LUNGE.active),
+    attack_recovery: overlay(CRAWLER, CRAWLER_LUNGE.recovery),
+  },
+  orderly: {
+    idle: ORDERLY,
+    walk_a: overlay(ORDERLY, [[4, 22, 'd'], [11, 22, '.']]),
+    walk_b: overlay(ORDERLY, [[4, 22, '.'], [11, 22, 'd']]),
+    attack_startup: overlay(ORDERLY, ORDERLY_SLAM_SWING.startup),
+    attack_active: overlay(ORDERLY, ORDERLY_SLAM_SWING.active),
+    attack_recovery: overlay(ORDERLY, ORDERLY_SLAM_SWING.recovery),
   },
 };
 

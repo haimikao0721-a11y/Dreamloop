@@ -42,6 +42,89 @@ export interface Body {
 
 export type EntityKind = 'player' | 'enemy' | 'item' | 'prop' | 'light';
 
+/* ── 帧数据 ── */
+
+/**
+ * 一个动作的帧定义。全部以 tick 为单位（60 tick = 1 秒）。
+ *
+ * 三段帧的含义【不是数值，是给玩家的信息】：
+ *   startup  起手 —— 这是"能躲"的窗口。没有起手，玩家只能靠反应，不是靠读
+ *   active   判定 —— 只有这一段能打到人
+ *   recovery 收招 —— 这是"打空要付代价"的窗口。没有收招，无脑连按最优
+ *
+ * 起手和收招是这套系统存在的全部理由。
+ */
+export interface ActionDef {
+  readonly id: string;
+  readonly startup: number;
+  readonly active: number;
+  readonly recovery: number;
+  /** 攻击距离，像素 */
+  readonly range: number;
+  /** 扇形角度（度）。360 = 全方位 */
+  readonly arc: number;
+  readonly damage: number;
+  /** 击退距离，像素 */
+  readonly knockback: number;
+  /** 出招时的位移（冲刺攻击用），像素 */
+  readonly moveX: number;
+  readonly moveY: number;
+}
+
+export interface ActionState {
+  def: ActionDef | null;
+  /** 已经推进到第几 tick */
+  frame: number;
+  /**
+   * 这次攻击已经打到过谁。
+   * 没有它的话，站在判定范围里不动会被同一招打出多次伤害。
+   */
+  hasHit: Set<string>;
+}
+
+export type AiPhase = 'idle' | 'chase';
+
+/**
+ * 敌人的 AI 状态。
+ *
+ * 参数直接挂在 state 上而不是单独传进来 —— 这样"这个敌人多近视、
+ * 出招后歇多久"是可存档、可回放、可被内容包改的，
+ * 而不是散在调用处的常量。
+ */
+export interface AiState {
+  phase: AiPhase;
+  /** 还要等多少 tick 才能再出招 */
+  cooldown: number;
+  /** 出招后要等多少 tick */
+  readonly cooldownMax: number;
+  /** 多近开始追 */
+  readonly detectRange: number;
+  /** 多近开始出招 */
+  readonly attackRange: number;
+  /**
+   * 追到这个距离就停。
+   * 没有它的话怪物会一直贴到玩家身上 —— 实体之间不碰撞（docs/06 第四节），
+   * 所以它会和玩家完全重叠，看起来像穿模，而且完全挡住视线。
+   */
+  readonly stopDistance: number;
+}
+
+export function makeAiState(cfg: {
+  cooldownMax: number;
+  detectRange: number;
+  attackRange: number;
+  stopDistance: number;
+}): AiState {
+  return {
+    phase: 'idle',
+    cooldown: 0,
+    cooldownMax: cfg.cooldownMax,
+    detectRange: cfg.detectRange,
+    attackRange: cfg.attackRange,
+    stopDistance: cfg.stopDistance,
+  };
+}
+
 export interface Entity {
   readonly id: string;
   readonly kind: EntityKind;
@@ -57,6 +140,18 @@ export interface Entity {
   hpMax: number;
   /** 像素/秒的最大移动速度 */
   speed: number;
+  /** 出招状态。所有能动的东西都有一个，包括玩家 */
+  action: ActionState;
+  /** 敌人 AI。玩家没有 */
+  ai?: AiState;
+  /** 这个实体能出什么招 */
+  attack?: ActionDef;
+  /** 起手/判定/收招期间不能移动 —— 这就是"能躲"和"打空要付代价"的实现 */
+  readonly immobileWhileActing?: boolean;
+}
+
+export function emptyAction(): ActionState {
+  return { def: null, frame: 0, hasHit: new Set<string>() };
 }
 
 /**

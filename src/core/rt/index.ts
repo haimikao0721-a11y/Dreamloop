@@ -12,4 +12,6 @@ export * from './types.js';
 export * from './input.js';
 export * from './physics.js';
 export * from './entities.js';
+export * from './action.js';
+export * from './ai.js';
 export * from './loop.js';

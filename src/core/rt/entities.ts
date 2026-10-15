@@ -11,7 +11,8 @@
  * ════════════════════════════════════════════════════════════════
  */
 
-import type { Body, Entity, EntityKind, RtState, Vec2 } from './types.js';
+import { emptyAction } from './types.js';
+import type { ActionDef, AiState, Body, Entity, EntityKind, RtState, Vec2 } from './types.js';
 
 export interface SpawnOptions {
   kind: EntityKind;
@@ -22,6 +23,10 @@ export interface SpawnOptions {
   hp?: number;
   speed?: number;
   facing?: Vec2;
+  /** 能出什么招 */
+  attack?: ActionDef;
+  /** 有 ai 的就是会被驱动着追人的 */
+  ai?: AiState;
 }
 
 /** 造一个实体。id 从 state.nextUid 取 —— 不用全局计数器，否则回放会串号 */
@@ -44,6 +49,9 @@ export function spawn(state: RtState, opts: SpawnOptions): Entity {
     hp,
     hpMax: hp,
     speed: opts.speed ?? 90,
+    action: emptyAction(),
+    ai: opts.ai,
+    attack: opts.attack,
   };
   state.nextUid++;
   state.entities.push(entity);

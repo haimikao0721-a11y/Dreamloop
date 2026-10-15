@@ -27,7 +27,9 @@
  * ════════════════════════════════════════════════════════════════
  */
 
-import { spawn } from './entities.js';
+import { actionDash, advanceAction, applyHits, beginAction, canAct, collectHits } from './action.js';
+import { updateAi } from './ai.js';
+import { spawn, sweep } from './entities.js';
 import { moveAndCollide, makeTestRoom } from './physics.js';
 import { NEUTRAL_INPUT, TILE } from './types.js';
 import type { Entity, InputState, RtState } from './types.js';
@@ -139,6 +141,16 @@ export function cloneRtState(state: RtState): RtState {
       hp: e.hp,
       hpMax: e.hpMax,
       speed: e.speed,
+      action: {
+        def: e.action.def,
+        frame: e.action.frame,
+        // ⚠️ Set 必须【新建】。直接传引用的话，副本上打一下，
+        //    原件也会记成"这一招已经打到过了"。
+        hasHit: new Set(e.action.hasHit),
+      },
+      // ai 是纯数据，浅拷够用；attack 是不可变的定义，直接共享
+      ai: e.ai === undefined ? undefined : { ...e.ai },
+      attack: e.attack,
     })),
     nextUid: state.nextUid,
   };
@@ -159,6 +171,20 @@ export interface TickEvent {
  * phase 不是 'playing' 时直接返回，世界整个冻结 ——
  * 这正是"停住操作是规则"（见 docs/05-表现与文字.md）。
  * 顺带保证了"玩家读了多久剧情"不影响任何数值。
+ *
+ * ── 五个阶段的顺序是有讲究的，不能随便调 ──
+ *
+ *   ① 推进帧    所有动作 frame++，先走时间
+ *   ② 决策      玩家输入 / 敌人 AI。这一步才决定"这一帧想干什么"
+ *   ③ 位移      速度 + 冲刺位移，统一走碰撞
+ *   ④ 命中      判定期才结算，hasHit 保证一招只打一次
+ *   ⑤ 清理      统一清掉死掉的
+ *
+ * ①在②之前，是为了让"这一帧刚开始的动作"从 frame 0 算起 ——
+ * 反过来的话，起手帧会凭空少一帧，而且边界测试会变得难以解释。
+ *
+ * ④在③之后，是为了让判定用【这一帧移动完之后】的位置。
+ * 反过来的话，冲进攻击范围的那一帧打不到人，手感会很怪。
  */
 export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickEvent[] {
   if (state.phase !== 'playing') return [];
@@ -166,21 +192,67 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
   const events: TickEvent[] = [];
   const dt = DT;
 
+  const player = state.entities.find((e) => e.kind === 'player' && e.alive);
+
+  // ① 时间先走
+  for (const entity of state.entities) {
+    if (!entity.alive) continue;
+    advanceAction(entity.action);
+  }
+
+  // ② 决策
   for (const entity of state.entities) {
     if (!entity.alive) continue;
 
-    if (entity.kind === 'player') {
-      applyPlayerInput(entity, input, state);
+    if (!canAct(entity.action)) {
+      // 出招期间【完全不动】。起手能被读、收招要付代价，全靠这一条
+      entity.body.vx = 0;
+      entity.body.vy = 0;
+      continue;
     }
-    // 敌人的 AI 在第 2 步接进来
 
-    // 速度 → 位移。分轴碰撞在 moveAndCollide 里
-    const dx = entity.body.vx * dt;
-    const dy = entity.body.vy * dt;
+    if (entity.kind === 'player') {
+      applyPlayerInput(entity, input);
+      if (input.attack && entity.attack !== undefined) {
+        beginAction(entity.action, entity.attack);
+      }
+    } else if (entity.ai !== undefined && player !== undefined) {
+      updateAi(entity, player);
+    }
+  }
+
+  // ③ 位移
+  for (const entity of state.entities) {
+    if (!entity.alive) continue;
+    const dash = actionDash(entity);
+    const dx = entity.body.vx * dt + dash.x;
+    const dy = entity.body.vy * dt + dash.y;
     if (dx !== 0 || dy !== 0) {
       moveAndCollide(entity.body, state.map, dx, dy);
     }
   }
+
+  // ④ 命中
+  for (const entity of state.entities) {
+    if (!entity.alive) continue;
+    const hits = collectHits(entity, state.entities);
+    if (hits.length === 0) continue;
+    applyHits(entity, hits);
+    for (const hit of hits) {
+      events.push({
+        type: 'hit',
+        attacker: entity.id,
+        target: hit.target.id,
+        damage: hit.damage,
+        x: hit.target.body.x,
+        y: hit.target.body.y,
+      });
+    }
+  }
+
+  // ⑤ 清理
+  const removed = sweep(state);
+  if (removed > 0) events.push({ type: 'sweep', removed });
 
   state.tick++;
   return events;
@@ -192,7 +264,7 @@ export function tickRt(state: RtState, input: InputState = NEUTRAL_INPUT): TickE
  * 为什么不做加速/惯性：这是俯视动作游戏，玩家要的是"松手就停"的
  * 精确控制。加了惯性之后走位会滑，躲避帧数的操作就变成了猜。
  */
-function applyPlayerInput(entity: Entity, input: InputState, _state: RtState): void {
+function applyPlayerInput(entity: Entity, input: InputState): void {
   entity.body.vx = input.moveX * entity.speed;
   entity.body.vy = input.moveY * entity.speed;
 
