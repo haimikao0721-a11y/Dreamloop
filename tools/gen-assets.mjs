@@ -793,8 +793,25 @@ function spriteRgba(name, art, palette) {
  * 精灵图（sprite sheet）：所有帧横着排一张。
  * 游戏里一次加载、按帧号切片 —— 比一百个小文件好管得多。
  */
+/**
+ * 把多帧拼成一张横向精灵表。
+ *
+ * 【帧之间不能有内边距】—— 渲染端是按 `frame * SPRITE_W` 切图的：
+ *
+ *     ctx.drawImage(sheet, frame * SPR_W, 0, SPR_W, SPR_H, ...)
+ *
+ * 原来这里有 gap = 2，于是每一帧都比上一帧多歪 2 像素：
+ *     帧 0 切 x=0  （实际在 2）  歪 2
+ *     帧 1 切 x=16 （实际在 20） 歪 4
+ *     帧 2 切 x=32 （实际在 38） 歪 6
+ * 表现是攻击动画"在滑"—— 而且因为幅度小，看起来像美术没对齐，
+ * 不像 bug。
+ *
+ * 内边距本来是防纹理渗色的，但这里每次只画一帧、源矩形是精确的，
+ * 根本不会渗。所以直接去掉，让尺寸严格等于 n*SPRITE_W × SPRITE_H。
+ */
 function buildSheet(art, palette, scale = 1) {
-  const gap = 2;
+  const gap = 0;
   const cw = SPRITE_W * scale;
   const chh = SPRITE_H * scale;
   const w = art.length * (cw + gap) + gap;
@@ -818,6 +835,18 @@ function buildSheet(art, palette, scale = 1) {
       }
     }
   });
+  /*
+   * 【尺寸契约】渲染端按 frame * SPRITE_W 切片，所以这里必须严格是
+   * n*SPRITE_W × SPRITE_H。断言一下 —— 这个契约一旦破了，
+   * 症状是"动画在滑"，很难查到生成器头上。
+   */
+  if (w !== art.length * cw || h !== chh) {
+    throw new Error(
+      `精灵表尺寸不对: ${w}×${h}，应该是 ${art.length * cw}×${chh}。` +
+        '渲染端按 frame * SPRITE_W 切片，有内边距的话每一帧都会切歪。',
+    );
+  }
+
   return encodePng(w, h, buf);
 }
 
