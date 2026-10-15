@@ -78,7 +78,19 @@ const MIN_COLS = 11;
 const MIN_ROWS = 10;
 /** 也不能太大 —— 一屏装不下就违背了"一屏一房间" */
 const MAX_COLS = 29;
-const MAX_ROWS = 21;
+/*
+ * 【上限定在 21 的时候，竖屏手机上会空掉一半屏幕】
+ *
+ * planRoomForWorld 迭代缩放，选第一个满足 MIN_COLS/MIN_ROWS 的。
+ * 手机舞台 308×1120：
+ *   scale 2 → cols = 9 < 11   ✗（宽度不够）
+ *   scale 1 → cols = 19 ✓, rows = 70 → 被上限砍到 21
+ * 结果 canvas 只有 304×352，而舞台有 1120 高 —— 上下各空 380px。
+ *
+ * 走廊就是要长的，所以放宽。上限的真正作用是【别让房间大到
+ * 生成器来不及填满】，40 格（640px）在手机上正好接近满屏。
+ */
+const MAX_ROWS = 40;
 
 /**
  * 按可用空间决定：房间几格、放大几倍。
@@ -279,21 +291,25 @@ const CSS = `
  * 强制转屏在浏览器里也做不到（没有屏幕方向锁的权限）。
  */
 /*
- * 竖屏提示。原来是一块【全屏遮罩】，删了。
+ * 【竖屏提示删了，一个字都不留】
  *
- * 用户的设备没有感应、转不了屏 —— 于是那个提示变成
- * "要求玩家做一件他做不到的事"，而且挡住整个游戏。
+ * 先是做成全屏遮罩，用户说"缺少感应，无法调整到横屏"；
+ * 改成状态栏里一句话，用户又说了一遍"我无法调整浏览器为横屏"。
  *
- * 现在只是状态栏里的一句话，竖屏触屏时才出现，不挡任何东西。
- * 能转屏的玩家照样能看见，转不了的也不受影响。
+ * 说两遍就是明确的信号：他的设备转不了屏。任何形式的提示
+ * 都只是在提醒他一件做不到的事，而手机上状态栏每多一样东西
+ * 就多占一行 —— 那是实打实的游戏空间。
  */
-.rt-portrait-tip { display: none; color: #6b6b7a; }
 /*
  * 窄屏藏掉调试信息（房 / 视口 / 敌人坐标）。
  * 手机上那一行会折成两三行，把游戏挤小 —— 而它只有开发时有用。
  */
-@media (max-width: 640px) { .rt-debug { display: none; } }
-.rt-wrap.portrait-touch .rt-portrait-tip { display: inline; }
+@media (max-width: 640px) {
+  .rt-debug { display: none; }
+  /* 手机上状态栏每多占一行就是一行游戏空间 */
+  .rt-bar { font-size: 11px; gap: 6px; padding-top: calc(env(safe-area-inset-top) + 6px); }
+  .rt-bar button { padding: 5px 10px; font-size: 11px; }
+}
 .rt-wheel {
   /*
    * 【挂在游戏区上，不是挂在视口上】—— 原来是 fixed + bottom:18px，
@@ -302,8 +318,9 @@ const CSS = `
    * 而且挂在游戏区上才是手机动作游戏的标准做法：
    * 拇指够得着，又不会挡到别的内容。
    */
-  position: absolute; left: 14px; bottom: 14px;
-  width: 132px; height: 132px; border-radius: 50%;
+  position: absolute; left: 10px; bottom: 10px;
+  /* 手机上 132px 占屏宽 37%，太大 —— 拇指够得着就够了 */
+  width: 106px; height: 106px; border-radius: 50%;
   border: 2px solid #2c2c38; background: rgba(22,22,29,0.45);
   display: none; touch-action: none;
 }
@@ -370,8 +387,14 @@ const CSS = `
    */
   grid-column: 2;
   min-width: 0;
-  /* 【居中对齐】—— 日志块和舞台同宽，文字居中放在里面 */
-  align-items: center;
+  /*
+   * 【不要用 align-items: center】—— flex 列里那样写，
+   * 子元素的宽度会变成【内容宽度】，于是 overflow:hidden 裁不到，
+   * 长行直接顶出屏幕边缘（表现是"日志右边被切掉"）。
+   *
+   * 正确做法：让子元素占满整行（默认的 stretch），
+   * 再用 text-align 把文字居中 —— 这样省略号才生效。
+   */
   text-align: center;
   /*
    * 【高度必须固定】—— 这是之前画面"跳"的根因。
@@ -388,6 +411,7 @@ const CSS = `
 }
 .rt-log-line {
   color: #4a4a56; transition: color 120ms linear;
+  text-align: center;
   /* 长行截断而不是折行 —— 折行会撑高，高度就不固定了 */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -720,17 +744,13 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   // 先填上 —— fps 要半秒后才算得出来，空着的话屏幕上就是一片空白，
   // 看起来像坏了
   stat.innerHTML = '<b>--</b> fps &nbsp; tick <b>0</b>';
-  const portraitTip = document.createElement('span');
-  portraitTip.className = 'rt-portrait-tip';
-  portraitTip.textContent = '· 横屏空间更大';
-
   const hint = document.createElement('span');
   hint.className = 'keys';
   hint.innerHTML = 'WASD 移动 &nbsp;·&nbsp; <b>空格 / J</b> 轻击 &nbsp;·&nbsp; <b>K</b> 重击 &nbsp;·&nbsp; <b>E</b> 交互';
   const exitBtn = document.createElement('button');
   exitBtn.type = 'button';
   exitBtn.textContent = '返回主菜单';
-  bar.append(stat, portraitTip, hint, exitBtn);
+  bar.append(stat, hint, exitBtn);
 
   /*
    * 【左右两栏现在就建好，只是宽度是 0】——
@@ -818,11 +838,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
    *
    * 现在只加一个 class，由 CSS 决定显不显示，不挡任何东西。
    */
-  function syncPortraitTip(): void {
-    wrap.classList.toggle('portrait-touch', coarse && window.innerHeight > window.innerWidth);
-  }
-
-  syncPortraitTip();
 
   /* ── 量出可用空间，再决定房间多大、放大几倍 ── */
 
@@ -1577,8 +1592,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
 
   const onResize = (): void => {
     fitCanvas();
-    // 转过来了就把提示收掉
-    syncPortraitTip();
   };
 
   /*

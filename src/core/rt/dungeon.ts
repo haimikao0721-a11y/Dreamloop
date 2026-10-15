@@ -145,7 +145,16 @@ export function generateRoom(opts: GenerateRoomOptions): RoomPlan {
     // ② 内部障碍。块数随层数增长，但【上限卡死】——
     //    障碍太多的话房间会退化成迷宫，而实时动作游戏里
     //    玩家没空在迷宫里绕
-    const blocks = Math.min(6, 1 + Math.floor(depth / 2));
+    /*
+     * 【障碍数量要跟着面积走】
+     *
+     * 原来写死上限 6 —— 房间变高之后（手机竖屏可以到 19×40）
+     * 6 块障碍摊在 760 格里几乎没有，房间空得像一张白纸。
+     *
+     * 按面积算：大约每 40 格一块，再按层数加成。
+     */
+    const area = (cols - 2) * (rows - 2);
+    const blocks = Math.min(22, Math.max(1, Math.round(area / 40) + Math.floor(depth / 2)));
     for (let b = 0; b < blocks; b++) {
       const bw = 1 + Math.floor(rand() * 3);
       const bh = 1 + Math.floor(rand() * 3);
