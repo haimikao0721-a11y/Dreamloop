@@ -422,9 +422,23 @@ export function startRtPrototype(root: HTMLElement): () => void {
 
   /* ── 开局 ── */
 
+  /*
+   * ?san=N 直接从某个理智值开局。
+   *
+   * 【为什么需要这个口子】自然流失是 12 秒 1 点，从 100 掉到 0 要二十分钟 ——
+   * 也就是说"归零换肤"这个功能根本没法手动验证。
+   * 调试口子就是为这种情况存在的：不是偷懒，是让功能可被看见。
+   *
+   * 顺带 ?seed= 也能换。
+   */
+  const qs = new URLSearchParams(location.search);
+  const sanParam = Number(qs.get('san'));
+  const seedParam = Number(qs.get('seed'));
+
   const state: RtState = createInitialRtState({
-    seed: 20261015,
+    seed: Number.isFinite(seedParam) && seedParam !== 0 ? seedParam : 20261015,
     map: makeTestRoom(plan.cols, plan.rows),
+    ...(Number.isFinite(sanParam) && qs.has('san') ? { san: sanParam } : {}),
   });
 
   const player = findPlayer(state);
