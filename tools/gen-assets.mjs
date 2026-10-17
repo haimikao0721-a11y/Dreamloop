@@ -455,24 +455,57 @@ function renderTile(name, art, palette) {
   return encodePng(TILE * ART, TILE * ART, present(src, TILE, TILE));
 }
 
-/** 一帧字符画 → 放大并分出明暗之后的 PNG */
-function encodePresented(frame, palette, name) {
-  const src = spriteRgba(name, frame, palette);
-  return encodePng(SPRITE_W * ART, SPRITE_H * ART, present(src, SPRITE_W, SPRITE_H));
+/**
+ * 角色图的最终像素。不再卡在 16×24。
+ * 旧角色仍用 16×24 字符画，这里按 3 倍最近邻放大到 48×72。
+ * 新角色直接画 48×72，一像素就是一像素，不再被放大糊掉。
+ * 渲染端按 48×72 切，世界里占 24×36（ART = 2）。
+ */
+const OUT_W = 48;
+const OUT_H = 72;
+
+function nearest(rgba, w, h, factor) {
+  const W = w * factor;
+  const H = h * factor;
+  const out = Buffer.alloc(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const si = (Math.floor(y / factor) * w + Math.floor(x / factor)) * 4;
+      const di = (y * W + x) * 4;
+      out[di] = rgba[si];
+      out[di + 1] = rgba[si + 1];
+      out[di + 2] = rgba[si + 2];
+      out[di + 3] = rgba[si + 3];
+    }
+  }
+  return out;
 }
 
-/** 多帧横排。宽度必须是 (帧数 × 角色宽 × ART)，渲染端按这个切 */
+/** 任意角色帧 → 统一的 48×72 RGBA */
+function toOutput(frame, palette, name) {
+  const src = spriteRgba(name, frame, palette);
+  const h = frame.length;
+  const w = frame[0].length;
+  if (w === OUT_W && h === OUT_H) return src;
+  if (w === SPRITE_W && h === SPRITE_H) return nearest(src, w, h, OUT_W / SPRITE_W);
+  throw new Error(`${name}: 尺寸 ${w}×${h}，只接受 ${SPRITE_W}×${SPRITE_H} 或 ${OUT_W}×${OUT_H}`);
+}
+
+/** 一帧 → PNG（48×72） */
+function encodePresented(frame, palette, name) {
+  return encodePng(OUT_W, OUT_H, toOutput(frame, palette, name));
+}
+
+/** 多帧横排。宽度 = 帧数 × 48，渲染端按这个切 */
 function buildPresentedSheet(frames, palette) {
-  const fw = SPRITE_W * ART;
-  const fh = SPRITE_H * ART;
-  const rgba = Buffer.alloc(frames.length * fw * fh * 4);
+  const rgba = Buffer.alloc(frames.length * OUT_W * OUT_H * 4);
   frames.forEach((frame, idx) => {
-    const src = present(spriteRgba(`sheet#${idx}`, frame, palette), SPRITE_W, SPRITE_H);
-    for (let y = 0; y < fh; y++) {
-      src.copy(rgba, (y * frames.length * fw + idx * fw) * 4, y * fw * 4, (y + 1) * fw * 4);
+    const src = toOutput(frame, palette, `sheet#${idx}`);
+    for (let y = 0; y < OUT_H; y++) {
+      src.copy(rgba, (y * frames.length * OUT_W + idx * OUT_W) * 4, y * OUT_W * 4, (y + 1) * OUT_W * 4);
     }
   });
-  return encodePng(frames.length * fw, fh, rgba);
+  return encodePng(frames.length * OUT_W, OUT_H, rgba);
 }
 
 /**
@@ -804,170 +837,153 @@ const ARCHIVIST_ATK_3 = [
 ];
 
 /**
- * 值夜护士：结实、白制服、帽上一点红。
- * 比记梦者宽一圈，灯是她的武器，走路时两脚交替迈出。
+ * 值夜护士，按 Q 版立绘的比例画在 48×72 上：
+ * 大头、黑发、有高光的眼睛、护士帽和红十字、裙子而不是裤子。
+ * step：-1 迈左脚，1 迈右脚。lamp：up 起手 / out 判定 / down 收招。
  */
-const NURSE = [
-  '................',
-  '....wwwrwwww....',
-  '...wwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk...',
-  '...kppppppppk...',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kbwwwwwwwwbk..',
-  '...kkkkkkkkkk...',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kk...kkk....',
-  '.....k....k.....',
-  '................',
-];
+function drawNurse({ step = 0, lamp = 'none' } = {}) {
+  const W = 48;
+  const H = 72;
+  const g = Array.from({ length: H }, () => Array(W).fill('.'));
+  const put = (x, y, c) => {
+    const X = Math.round(x);
+    const Y = Math.round(y);
+    if (X >= 0 && Y >= 0 && X < W && Y >= 0 && Y < H) g[Y][X] = c;
+  };
+  const disc = (cx, cy, rx, ry, c, pred) => {
+    for (let y = -ry; y <= ry; y++) {
+      for (let x = -rx; x <= rx; x++) {
+        const nx = x / rx;
+        const ny = y / ry;
+        if (nx * nx + ny * ny <= 1 && (pred === undefined || pred(x, y))) put(cx + x, cy + y, c);
+      }
+    }
+  };
+  const cx = 23;
 
-const NURSE_WALK_A = [
-  '................',
-  '....wwwrwwww....',
-  '...wwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk...',
-  '...kppppppppk...',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kbwwwwwwwwbk..',
-  '...kkkkkkkkkk...',
-  '....kbbkkbbk....',
-  '...kbb...kbb....',
-  '...kb.....kb....',
-  '....k......k....',
-  '................',
-  '................',
-];
+  disc(cx, 31, 18, 17, 'd');
+  disc(cx - 8, 28, 7, 9, 's');
+  disc(cx, 34, 12, 13, 'w');
+  disc(cx + 6, 36, 8, 10, 'p', (x) => x > 0);
 
-const NURSE_WALK_B = [
-  '................',
-  '....wwwrwwww....',
-  '...wwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk...',
-  '...kppppppppk...',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kbwwwwwwwwbk..',
-  '...kkkkkkkkkk...',
-  '....kbbkkbbk....',
-  '....bbk...kbb...',
-  '....bk.....kb...',
-  '....k......k....',
-  '................',
-  '................',
-];
+  disc(cx, 15, 12, 7, 'w');
+  disc(cx + 3, 14, 8, 5, 'b', (x) => x > 0);
+  for (let x = cx - 15; x <= cx + 15; x++) {
+    put(x, 19, 'k');
+    put(x, 20, 'w');
+    put(x, 21, 'b');
+  }
+  for (let y = 11; y <= 17; y++) put(cx, y, 'r');
+  for (let x = cx - 3; x <= cx + 3; x++) put(x, 14, 'r');
+  put(cx, 14, 'R');
 
-const NURSE_ATK_1 = [
-  '.C..............',
-  'cCc.wwwrwwww....',
-  '.ccwwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk...',
-  '...kppppppppk...',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kbwwwwwwwwbk..',
-  '...kkkkkkkkkk...',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kk...kkk....',
-  '.....k....k.....',
-  '................',
-];
+  for (let x = cx - 10; x <= cx + 10; x++) {
+    const dip = Math.abs(x - cx) < 4 ? 1 : 0;
+    put(x, 23 + dip, 'd');
+    put(x, 24 + dip, 'k');
+  }
+  for (let y = 22; y <= 52; y++) {
+    const flare = Math.round(Math.sin(((y - 22) / 30) * Math.PI) * 4);
+    const left = cx - 16 - flare;
+    const right = cx + 16 + flare;
+    for (let i = 0; i < 4; i++) {
+      put(left + i, y, i === 0 ? 'k' : 'd');
+      put(right - i, y, i === 0 ? 'k' : 'd');
+    }
+    put(left + 2, y, 's');
+  }
 
-const NURSE_ATK_2 = [
-  '................',
-  '....wwwrwwww....',
-  '...wwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk..C',
-  '...kppppppppkcC.',
-  '....kppppppk.ccc',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbkk.',
-  '..kwwwwwwwwwwkC.',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kbwwwwwwwwbk..',
-  '...kkkkkkkkkk...',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kbbkkbbk....',
-  '....kk...kkk....',
-  '.....k....k.....',
-  '................',
-];
+  const eye = (ex) => {
+    for (let y = 27; y <= 33; y++) {
+      for (let x = 0; x <= 6; x++) put(ex + x, y, 'k');
+    }
+    for (let y = 28; y <= 32; y++) {
+      for (let x = 1; x <= 5; x++) put(ex + x, y, 'f');
+    }
+    for (let y = 29; y <= 32; y++) {
+      for (let x = 2; x <= 5; x++) put(ex + x, y, 'k');
+    }
+    put(ex + 2, 29, 'w');
+    put(ex + 3, 29, 'w');
+  };
+  eye(cx - 10);
+  eye(cx + 3);
+  for (let i = 0; i < 5; i++) {
+    put(cx - 9 + i, 27, 'd');
+    put(cx + 3 + i, 27, 'd');
+  }
+  put(cx - 11, 34, 'r');
+  put(cx - 10, 34, 'r');
+  put(cx + 10, 34, 'r');
+  put(cx + 11, 34, 'r');
+  put(cx - 1, 37, 'R');
+  put(cx, 37, 'r');
+  put(cx + 1, 37, 'R');
 
-const NURSE_ATK_3 = [
-  '................',
-  '....wwwrwwww....',
-  '...wwwwwwwwww...',
-  '....kkkkkkkk....',
-  '...kppppppppk...',
-  '...kpkkppkkpk...',
-  '...kppppppppk...',
-  '....kppppppk....',
-  '.....kppppk.....',
-  '...kkkkkkkkkk...',
-  '..kbbbbbbbbbbk..',
-  '..kbwwwwwwwwbk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwrrrrrrwwk..',
-  '..kwwwwwwwwwwk..',
-  '..kwwwwwwwwwwkc.',
-  '..kbwwwwwwwwbkC.',
-  '...kkkkkkkkkkcc.',
-  '....kbbkkbbk....',
-  '....kbbkkbbc....',
-  '....kbbkkbbk....',
-  '....kk...kkk....',
-  '.....k....k.....',
-  '................',
-];
+  for (let y = 42; y <= 45; y++) {
+    for (let x = cx - 2; x <= cx + 2; x++) put(x, y, 'p');
+  }
+
+  for (let y = 44; y <= 63; y++) {
+    const t = (y - 44) / 19;
+    const half = Math.round(6 + t * 13);
+    for (let x = cx - half; x <= cx + half; x++) {
+      const edge = x === cx - half || x === cx + half;
+      put(x, y, edge ? 'k' : x > cx + 1 ? 'b' : 'w');
+    }
+  }
+  for (let y = 47; y <= 51; y++) put(cx, y, 'r');
+  for (let x = cx - 2; x <= cx + 2; x++) put(x, 49, 'r');
+  for (let x = cx - 16; x <= cx + 16; x++) put(x, 63, 'b');
+
+  const leftY = 64 + (step < 0 ? 2 : 0);
+  const rightY = 64 + (step > 0 ? 2 : 0);
+  const shoe = (fx, fy) => {
+    for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < 5; x++) put(fx + x, fy + y, y >= 4 ? 'k' : 'b');
+    }
+  };
+  shoe(cx - 7, leftY);
+  shoe(cx + 2, rightY);
+
+  const stampLamp = (lx, ly) => {
+    put(lx, ly, 'C');
+    put(lx - 1, ly + 1, 'c');
+    put(lx, ly + 1, 'C');
+    put(lx + 1, ly + 1, 'c');
+    put(lx, ly + 2, 'c');
+    put(lx, ly + 3, 'b');
+    put(lx - 1, ly + 4, 'b');
+    put(lx, ly + 4, 'w');
+    put(lx + 1, ly + 4, 'b');
+  };
+  if (lamp === 'up') stampLamp(8, 16);
+  else if (lamp === 'out') stampLamp(40, 40);
+  else if (lamp === 'down') stampLamp(36, 56);
+
+  const filled = g.map((row) => row.slice());
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (filled[y][x] !== '.') continue;
+      const n = [
+        filled[y - 1]?.[x],
+        filled[y + 1]?.[x],
+        filled[y][x - 1],
+        filled[y][x + 1],
+      ];
+      if (n.some((c) => c !== undefined && c !== '.')) g[y][x] = 'k';
+    }
+  }
+
+  return g.map((row) => row.join(''));
+}
+
+const NURSE = drawNurse();
+const NURSE_WALK_A = drawNurse({ step: -1 });
+const NURSE_WALK_B = drawNurse({ step: 1 });
+const NURSE_ATK_1 = drawNurse({ lamp: 'up' });
+const NURSE_ATK_2 = drawNurse({ lamp: 'out' });
+const NURSE_ATK_3 = drawNurse({ lamp: 'down' });
 
 /* ── 敌人 ── */
 
@@ -1352,9 +1368,6 @@ const CHARACTERS = {
 function spriteRgba(name, art, palette) {
   const h = art.length;
   const w = art[0].length;
-  if (w !== SPRITE_W || h !== SPRITE_H) {
-    throw new Error(`${name}: 尺寸 ${w}×${h}，应为 ${SPRITE_W}×${SPRITE_H}`);
-  }
   const rgba = Buffer.alloc(w * h * 4);
   for (let y = 0; y < h; y++) {
     const row = art[y];
@@ -1438,13 +1451,13 @@ function buildSheet(art, palette, scale = 1) {
   return encodePng(w, h, buf);
 }
 
-/** 两个角色的全部帧摞成一张，放大 5 倍 —— 用来肉眼看清楚画成什么样 */
+/** 全部帧摞成一张。源图已是 48×72，这里只放大 2 倍方便看 */
 function buildCharacterPreview() {
-  const scale = 5;
+  const scale = 2;
   const frames = FRAME_ORDER.map((n) => n);
   const cols = frames.length;
-  const cw = SPRITE_W * scale;
-  const chh = SPRITE_H * scale;
+  const cw = OUT_W * scale;
+  const chh = OUT_H * scale;
   const gap = 6;
   const names = Object.keys(CHARACTERS);
   const w = cols * cw + (cols + 1) * gap;
@@ -1465,12 +1478,12 @@ function buildCharacterPreview() {
     frames.forEach((frameName, col) => {
       const art = CHARACTERS[charName][frameName];
       if (!art) return;
-      const src = spriteRgba(`${charName}/${frameName}`, art, THEME_NORMAL);
+      const src = toOutput(art, THEME_NORMAL, `${charName}/${frameName}`);
       const ox = gap + col * (cw + gap);
       const oy = gap + row * (chh + gap);
       for (let y = 0; y < chh; y++) {
         for (let x = 0; x < cw; x++) {
-          const si = (Math.floor(y / scale) * SPRITE_W + Math.floor(x / scale)) * 4;
+          const si = (Math.floor(y / scale) * OUT_W + Math.floor(x / scale)) * 4;
           if (src[si + 3] === 0) continue;
           const di = ((oy + y) * w + (ox + x)) * 4;
           buf[di] = src[si];
@@ -1529,6 +1542,8 @@ const FRAME_ORDER = Object.values(ACTIONS).flat();
 
 let spriteCount = 0;
 for (const [charName, frames] of Object.entries(CHARACTERS)) {
+  // 值夜护士是 320×480 的立绘，由 tools/paint-nurse.mjs 画，不在这里覆盖。
+  if (charName === 'ward_nurse') continue;
   const dir = join(ROOT, 'assets', 'characters', charName, 'actions');
   mkdirSync(dir, { recursive: true });
 

@@ -52,20 +52,16 @@ import type { RtEnemyDef } from '@data/rt/enemies.js';
 const ROOM_W = 21;
 const ROOM_H = 15;
 /**
- * 精灵在世界上占多大（和格子同一套坐标）。
- * 图片本身是这个的 ART 倍 —— 见下面。
+ * 角色在世界上占多大。图片是 ART 倍，所以屏幕上是 48×72 像素，
+ * 一格地砖只有 32 像素 —— 头、头发、眼睛才放得下。
+ * 脚底仍对齐碰撞体下沿，人可以比格子高。
  */
-const SPR_W = 16;
-const SPR_H = 24;
+const SPR_W = 24;
+const SPR_H = 36;
 /**
- * 一张图里，一个世界像素用几个绘画像素。
- *
- * 16×24 的角色放大到满屏，一个像素变成一大块，再细的笔也画不进去。
- * 素材按 2 倍像素画（瓦片 32、角色 32×48），画布也按 2 倍建。
- * 显示尺寸仍按原来的房间大小缩回去 —— 页面没变大，每个像素变小了，
- * 多出来的那一倍像素才有地方放细节。
- *
+ * 画布内部像素 / 世界像素。
  * 和 tools/gen-assets.mjs 的 ART 必须是同一个数。
+ * 角色图输出 ART×SPR = 48×72。
  */
 export const ART = 2;
 /**
@@ -524,9 +520,9 @@ function pickFrame(
   e: Entity,
   tick: number,
   zero: boolean,
-): { sheet?: HTMLImageElement; frame: number } {
+): { sheet?: HTMLImageElement; frame: number; anim: Sheet } {
   const set = sprites.get(e.id);
-  if (set === undefined) return { frame: 0 };
+  if (set === undefined) return { frame: 0, anim: 'idle' };
 
   /*
    * 【归零时换一套配色】—— 和地图一样，同一套字符画换调色板。
@@ -537,9 +533,9 @@ function pickFrame(
     zero && usable(zeroed) ? zeroed : normal;
 
   const phase = actionPhase(e.action);
-  if (phase === 'startup') return { sheet: pickSheet(set.attack, set.attackZero), frame: 0 };
-  if (phase === 'active') return { sheet: pickSheet(set.attack, set.attackZero), frame: 1 };
-  if (phase === 'recovery') return { sheet: pickSheet(set.attack, set.attackZero), frame: 2 };
+  if (phase === 'startup') return { sheet: pickSheet(set.attack, set.attackZero), frame: 0, anim: 'attack' };
+  if (phase === 'active') return { sheet: pickSheet(set.attack, set.attackZero), frame: 1, anim: 'attack' };
+  if (phase === 'recovery') return { sheet: pickSheet(set.attack, set.attackZero), frame: 2, anim: 'attack' };
 
   // 在动就走走路动画。用 tick 而不是真实时间 —— 保持确定性
   const moving = Math.abs(e.body.vx) > 1 || Math.abs(e.body.vy) > 1;
@@ -547,9 +543,10 @@ function pickFrame(
     return {
       sheet: pickSheet(set.move, set.moveZero),
       frame: Math.floor(tick / WALK_FRAME_TICKS) % SHEET_FRAMES.move,
+      anim: 'move',
     };
   }
-  return { sheet: pickSheet(set.idle, set.idleZero), frame: 0 };
+  return { sheet: pickSheet(set.idle, set.idleZero), frame: 0, anim: 'idle' };
 }
 
 
@@ -1207,10 +1204,17 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   let fps = 0;
 
   function drawEntity(e: Entity): void {
-    const { sheet, frame } = pickFrame(e, state.tick, isZeroState(state.san));
-    // 精灵比格子高，脚底对齐碰撞体下沿
-    const px = Math.round(e.body.x - SPR_W / 2);
-    const py = Math.round(e.body.y + e.body.hh - SPR_H);
+    const { sheet, frame, anim } = pickFrame(e, state.tick, isZeroState(state.san));
+    // 按图片真实宽度切帧。高清立绘可以是 300px 以上，
+    // 显示时最高大约 9 格，避免一个人铺满整个房间。
+    const frames = SHEET_FRAMES[anim];
+    const srcW = usable(sheet) ? sheet.naturalWidth / frames : SPR_W * ART;
+    const srcH = usable(sheet) ? sheet.naturalHeight : SPR_H * ART;
+    const maxH = TILE * 11;
+    const destH = Math.min(srcH / ART, maxH);
+    const destW = (srcW / ART) * (destH / (srcH / ART));
+    const px = Math.round(e.body.x - destW / 2);
+    const py = Math.round(e.body.y + e.body.hh - destH);
 
     if (ctx !== null) {
       /*
@@ -1231,18 +1235,10 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
       ctx.fill();
     }
 
-    if (usable(sheet)) {
-      ctx?.drawImage(
-        sheet,
-        frame * SPR_W * ART,
-        0,
-        SPR_W * ART,
-        SPR_H * ART,
-        px,
-        py,
-        SPR_W,
-        SPR_H,
-      );
+    if (usable(sheet) && ctx !== null) {
+      ctx.imageSmoothingEnabled = srcH > 120;
+      ctx.drawImage(sheet, frame * srcW, 0, srcW, srcH, px, py, destW, destH);
+      ctx.imageSmoothingEnabled = false;
       return;
     }
     // 素材没好时的兜底：色块，但至少颜色能区分敌我。
