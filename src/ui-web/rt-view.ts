@@ -53,16 +53,8 @@ import type { RtEnemyDef } from '@data/rt/enemies.js';
 const ROOM_W = 21;
 const ROOM_H = 15;
 /**
- * 角色在世界上占多大。图片是 ART 倍，所以屏幕上是 48×72 像素，
- * 一格地砖只有 32 像素 —— 头、头发、眼睛才放得下。
- * 脚底仍对齐碰撞体下沿，人可以比格子高。
- */
-const SPR_W = 24;
-const SPR_H = 36;
-/**
- * 画布内部像素 / 世界像素。
- * 和 tools/gen-assets.mjs 的 ART 必须是同一个数。
- * 角色图输出 ART×SPR = 48×72。
+ * 画布内部像素 / 世界像素。字是按格子画的，放大只为了边缘整齐，
+ * 不代表在读图片素材。
  */
 export const ART = 2;
 /**
@@ -72,8 +64,6 @@ export const ART = 2;
  * 不留余量的话会被裁掉，房间顶部看起来是平的。
  */
 const WALL_TOP_H = TILE;
-/** 移动动画每几帧换一次图。8 tick ≈ 7.5fps 的走路节奏 */
-const WALK_FRAME_TICKS = 8;
 
 /* ── 房间尺寸按屏幕算 ── */
 
@@ -465,89 +455,17 @@ const CSS = `
 
 /* ── 素材 ── */
 
-type Sheet = 'idle' | 'move' | 'attack';
-
-interface SpriteSet {
-  idle?: HTMLImageElement;
-  move?: HTMLImageElement;
-  attack?: HTMLImageElement;
-  /** 理智归零的配色。和地图一样，同一套字符画换调色板 */
-  idleZero?: HTMLImageElement;
-  moveZero?: HTMLImageElement;
-  attackZero?: HTMLImageElement;
-}
-
-const SHEET_FRAMES: Record<Sheet, number> = { idle: 1, move: 2, attack: 3 };
-
-function assetUrl(path: string): string {
-  return new URL(`./${path}`, document.baseURI).href;
-}
-
-function loadImage(path: string): Promise<HTMLImageElement> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    // 加载失败也要让原型跑起来 —— 退回色块，而不是白屏
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(img);
-    img.src = assetUrl(path);
-  });
-}
-
-async function loadSprites(sprite: string): Promise<SpriteSet> {
-  // 两套配色一起加载 —— 都是几 KB 的小图，切换时才不会有白帧
-  const [idle, move, attack, idleZero, moveZero, attackZero] = await Promise.all([
-    loadImage(`characters/${sprite}/actions/idle.png`),
-    loadImage(`characters/${sprite}/actions/move.png`),
-    loadImage(`characters/${sprite}/actions/attack.png`),
-    loadImage(`characters/${sprite}/actions/idle_zero.png`),
-    loadImage(`characters/${sprite}/actions/move_zero.png`),
-    loadImage(`characters/${sprite}/actions/attack_zero.png`),
-  ]);
-  return { idle, move, attack, idleZero, moveZero, attackZero };
-}
-
-function usable(img: HTMLImageElement | undefined): img is HTMLImageElement {
-  return img !== undefined && img.complete && img.naturalWidth > 0;
-}
-
 /**
- * 这一帧该画哪张图、第几格。
- *
- * 出招的三段【直接映射到素材的三帧】——
- * 这就是帧数据在画面上"被看见"的地方。如果起手帧画不出区别，
- * 玩家就没有任何依据可以躲。
+ * 画面上的占位字。素材还没定规格，先用字符把"这是谁、这是什么"标出来。
+ * 和回合制地图同一套读法：人是 @，墙是 ▓，楼梯是 >。
  */
-function pickFrame(
-  e: Entity,
-  tick: number,
-  zero: boolean,
-): { sheet?: HTMLImageElement; frame: number; anim: Sheet } {
-  const set = sprites.get(e.id);
-  if (set === undefined) return { frame: 0, anim: 'idle' };
-
-  /*
-   * 【归零时换一套配色】—— 和地图一样，同一套字符画换调色板。
-   * 角色也要换：只有地图变红、人还是原色的话，看起来像两个世界拼在一起。
-   * 缺图就退回原色，不硬闪。
-   */
-  const pickSheet = (normal?: HTMLImageElement, zeroed?: HTMLImageElement) =>
-    zero && usable(zeroed) ? zeroed : normal;
-
-  const phase = actionPhase(e.action);
-  if (phase === 'startup') return { sheet: pickSheet(set.attack, set.attackZero), frame: 0, anim: 'attack' };
-  if (phase === 'active') return { sheet: pickSheet(set.attack, set.attackZero), frame: 1, anim: 'attack' };
-  if (phase === 'recovery') return { sheet: pickSheet(set.attack, set.attackZero), frame: 2, anim: 'attack' };
-
-  // 在动就走走路动画。用 tick 而不是真实时间 —— 保持确定性
-  const moving = Math.abs(e.body.vx) > 1 || Math.abs(e.body.vy) > 1;
-  if (moving) {
-    return {
-      sheet: pickSheet(set.move, set.moveZero),
-      frame: Math.floor(tick / WALK_FRAME_TICKS) % SHEET_FRAMES.move,
-      anim: 'move',
-    };
-  }
-  return { sheet: pickSheet(set.idle, set.idleZero), frame: 0, anim: 'idle' };
+function placeholderGlyph(kind: Entity['kind'], id: string | undefined, roleId: string): string {
+  if (kind === 'player') return roleId === 'ward_nurse' ? 'N' : '@';
+  if (kind === 'item') return findItem(id ?? '')?.glyph ?? '*';
+  if (kind === 'light') return 'i';
+  if (id === 'crawler') return 'c';
+  if (id === 'orderly') return 'o';
+  return '?';
 }
 
 
@@ -733,9 +651,7 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** 实体 id → 精灵集。放在模块级是为了让 pickFrame 不用透传参数 */
-const sprites = new Map<string, SpriteSet>();
-/** 实体 id → 敌人定义 id，调试输出用 */
+/** 实体 id → 敌人定义 id，调试输出和占位字用 */
 const names = new Map<string, string>();
 
 /** 开局参数。主线的选人界面传进来；?proto=rt 直接开就用默认角色 */
@@ -1049,7 +965,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
       sanDrain: tpl.sanDrain,
       ai: makeAiState(tpl.ai),
     });
-    void loadSprites(def.sprite).then((s) => sprites.set(e.id, s));
     names.set(e.id, def.id);
     return e;
   }
@@ -1064,8 +979,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   placeFoe(ORDERLY, clampCell(midC + 6, plan.cols), clampCell(midR, plan.rows));
 
   if (player !== undefined) {
-    void loadSprites(role?.id ?? 'dream_archivist').then((s) => sprites.set(player.id, s));
-
     /*
      * 玩家手里那根蜡烛。
      * 半径 4 格、每秒 +1 理智、燃料 90 秒 —— 见 docs/06 第九节。
@@ -1210,55 +1123,32 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   let fpsTimer = 0;
   let fps = 0;
 
+  /** 格子中心写一个占位字。素材规格没定之前，画面只靠这些字符认人。 */
+  function drawGlyph(text: string, x: number, y: number, color: string): void {
+    if (ctx === null) return;
+    ctx.fillStyle = color;
+    ctx.font = `${TILE - 1}px ui-monospace, "Cascadia Mono", Consolas, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+
   function drawEntity(e: Entity): void {
-    const { sheet, frame, anim } = pickFrame(e, state.tick, isZeroState(state.san));
-    // 按图片真实宽度切帧。高清立绘可以是 300px 以上，
-    // 显示时最高大约 9 格，避免一个人铺满整个房间。
-    const frames = SHEET_FRAMES[anim];
-    const srcW = usable(sheet) ? sheet.naturalWidth / frames : SPR_W * ART;
-    const srcH = usable(sheet) ? sheet.naturalHeight : SPR_H * ART;
-    const maxH = TILE * 11;
-    const destH = Math.min(srcH / ART, maxH);
-    const destW = (srcW / ART) * (destH / (srcH / ART));
-    const px = Math.round(e.body.x - destW / 2);
-    const py = Math.round(e.body.y + e.body.hh - destH);
-
-    if (ctx !== null) {
-      /*
-       * 脚下的影子。
-       *
-       * 【有影子和没影子，是"站着"和"浮着"的区别】—— 以撒式视角
-       * 里角色比格子高，没有影子的话会显得贴在画面上而不是站在地上。
-       * 椭圆用 arc + 缩放画，兼容性比 ellipse() 好（测试环境里的
-       * 假 canvas 不一定有 ellipse）。
-       */
-      ctx.save();
-      ctx.translate(e.body.x, e.body.y + e.body.hh - 1);
-      ctx.scale(1, 0.32);
-      ctx.beginPath();
-      ctx.arc(0, 0, e.body.hw + 3, 0, Math.PI * 2);
-      ctx.restore();
-      ctx.fillStyle = 'rgba(4,4,8,0.5)';
-      ctx.fill();
-    }
-
-    if (usable(sheet) && ctx !== null) {
-      ctx.imageSmoothingEnabled = srcH > 120;
-      ctx.drawImage(sheet, frame * srcW, 0, srcW, srcH, px, py, destW, destH);
-      ctx.imageSmoothingEnabled = false;
-      return;
-    }
-    // 素材没好时的兜底：色块，但至少颜色能区分敌我。
-    // 【光源不在此列】—— 它在上面就被 continue 挡掉了，
-    // 一个青色方块在地上会被当成怪物
     if (ctx === null || e.kind === 'light') return;
-    ctx.fillStyle = e.kind === 'player' ? '#d8a848' : '#4a6a68';
-    ctx.fillRect(
-      Math.round(e.body.x - e.body.hw),
-      Math.round(e.body.y - e.body.hh),
-      e.body.hw * 2,
-      e.body.hh * 2,
-    );
+    const zero = isZeroState(state.san);
+    const glyph =
+      e.kind === 'player'
+        ? placeholderGlyph('player', undefined, state.roleId)
+        : placeholderGlyph('enemy', names.get(e.id), state.roleId);
+    const color =
+      e.kind === 'player'
+        ? zero
+          ? '#e0703a'
+          : '#d8a848'
+        : zero
+          ? '#a84838'
+          : '#c8c6c0';
+    drawGlyph(glyph, e.body.x, e.body.y, color);
   }
 
   /** 敌人的"抬手预警"：起手期间在头顶画一条进度条 */
@@ -1271,7 +1161,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     const p = total === 0 ? 1 : e.action.frame / total;
     const w = 16;
     const x = Math.round(e.body.x - w / 2);
-    const y = Math.round(e.body.y + e.body.hh - SPR_H) - 5;
+    const y = Math.round(e.body.y - TILE / 2) - 4;
 
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(x, y, w, 2);
@@ -1305,7 +1195,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
 
     // 理智归零 → 整张地图换配色。玩家不用看数字就知道自己掉进去了
     const zero = isZeroState(state.san);
-    const skin = zero ? tilesZero : tiles;
     // 房间清空了没 —— 楼梯亮不亮看它
     const clear = roomCleared(state);
 
@@ -1353,21 +1242,15 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
         if (isSolidAt(tx, ty)) continue;
         const isStairs = map.tiles[ty * map.w + tx] === TILE_STAIRS;
 
-        if (isStairs && usable(skin.stairs)) {
-          /*
-           * 楼梯。清空之前画【暗的】—— 这是个可操作性的提示：
-           * 玩家一眼就知道"还不能下去"，而不用去撞一次墙才明白。
-           */
+        ctx.fillStyle = zero ? '#1a0e0e' : '#12121a';
+        ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+        if (isStairs) {
+          // 没清空时字是暗的：还不能下楼
           ctx.globalAlpha = clear ? 1 : 0.35;
-          ctx.drawImage(skin.stairs, tx * TILE, ty * TILE, TILE, TILE);
+          drawGlyph('>', tx * TILE + TILE / 2, ty * TILE + TILE / 2, zero ? '#e0703a' : '#d8a848');
           ctx.globalAlpha = 1;
-          continue;
-        }
-        if (usable(skin.floor)) {
-          ctx.drawImage(skin.floor, tx * TILE, ty * TILE, TILE, TILE);
         } else {
-          ctx.fillStyle = zero ? '#1a0e0e' : '#12121a';
-          ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+          drawGlyph('·', tx * TILE + TILE / 2, ty * TILE + TILE / 2, zero ? '#4a2420' : '#3a3a44');
         }
       }
     }
@@ -1409,12 +1292,9 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
         const px = tx * TILE;
         const py = ty * TILE;
 
-        if (usable(skin.wall)) {
-          ctx.drawImage(skin.wall, px, py, TILE, TILE);
-        } else {
-          ctx.fillStyle = zero ? '#331818' : '#272733';
-          ctx.fillRect(px, py, TILE, TILE);
-        }
+        ctx.fillStyle = zero ? '#331818' : '#272733';
+        ctx.fillRect(px, py, TILE, TILE);
+        drawGlyph('▓', px + TILE / 2, py + TILE / 2, zero ? '#6a3030' : '#6a6a78');
 
         /*
          * 墙根落在下方地板上的投影。
@@ -1436,12 +1316,9 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
         }
 
         if (!isWallAt(tx, ty - 1)) {
-          if (usable(skin.wallTop)) {
-            ctx.drawImage(skin.wallTop, px, py - TILE, TILE, TILE);
-          } else {
-            ctx.fillStyle = zero ? '#42201f' : '#343442';
-            ctx.fillRect(px, py - TILE, TILE, TILE);
-          }
+          ctx.fillStyle = zero ? '#42201f' : '#343442';
+          ctx.fillRect(px, py - TILE, TILE, TILE);
+          drawGlyph('─', px + TILE / 2, py - TILE / 2, zero ? '#8a4840' : '#8a8a98');
         }
       }
 
@@ -1451,35 +1328,18 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
         if (Math.floor(e.body.y / TILE) !== ty) continue;
 
         if (e.kind === 'light') {
-          // 光源用素材画。没有素材就【不画】—— 绝不退回色块：
-          // 一个青色的方块在地上会被当成怪物，比不画还糟
-          const fuel = e.light?.fuel ?? -1;
-          const art = fuel < 0 ? lightArt.lamp : lightArt.candle;
-          if (usable(art)) {
-            ctx.drawImage(
-              art,
-              Math.round(e.body.x - TILE / 2),
-              Math.round(e.body.y - TILE / 2),
-              TILE,
-              TILE,
-            );
-          }
+          const planted = (e.light?.fuel ?? -1) >= 0;
+          drawGlyph(planted ? '*' : 'i', e.body.x, e.body.y, zero ? '#e0703a' : '#f7d27a');
           continue;
         }
 
         if (e.kind === 'item') {
-          // 掉落物：跳动的光点。关键是玩家要能看见"这里有东西"
-          const t = (state.tick % 60) / 60;
-          const r = 3 + Math.sin(t * Math.PI * 2) * 1.2;
-          ctx.beginPath();
-          ctx.arc(e.body.x, e.body.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#d8a848';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(216,168,72,0.4)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.arc(e.body.x, e.body.y, r + 3, 0, Math.PI * 2);
-          ctx.stroke();
+          drawGlyph(
+            placeholderGlyph('item', e.itemDefId, state.roleId),
+            e.body.x,
+            e.body.y,
+            '#d8a848',
+          );
           continue;
         }
 
@@ -1508,27 +1368,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
       );
     }
   }
-
-  const tiles: {
-    floor?: HTMLImageElement;
-    wall?: HTMLImageElement;
-    wallTop?: HTMLImageElement;
-    stairs?: HTMLImageElement;
-  } = {};
-  /** 光源的素材：壁灯（拿不走）和蜡烛（地上的）。实体没精灵，单独管 */
-  const lightArt: { lamp?: HTMLImageElement; candle?: HTMLImageElement } = {};
-  /**
-   * 理智归零后的地图配色。
-   *
-   * 【同一批瓦片，另一套调色板】—— 见 tools/gen-assets.mjs。
-   * 所以"归零换风格"不用画两套图，多加载两份 PNG 就够了。
-   */
-  const tilesZero: {
-    floor?: HTMLImageElement;
-    wall?: HTMLImageElement;
-    wallTop?: HTMLImageElement;
-    stairs?: HTMLImageElement;
-  } = {};
 
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
@@ -1643,32 +1482,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   ro?.observe(stage);
   window.addEventListener('resize', onResize);
 
-  void Promise.all([
-    loadImage('map/floor.png'),
-    loadImage('map/wall.png'),
-    loadImage('map/wall_top.png'),
-    loadImage('map/stairs.png'),
-    loadImage('map/zero/floor.png'),
-    loadImage('map/zero/wall.png'),
-    loadImage('map/zero/wall_top.png'),
-    loadImage('map/zero/stairs.png'),
-  ]).then(([f, w, wt, st, zf, zw, zwt, zst]) => {
-    tiles.floor = f;
-    tiles.wall = w;
-    tiles.wallTop = wt;
-    tiles.stairs = st;
-    tilesZero.floor = zf;
-    tilesZero.wall = zw;
-    tilesZero.wallTop = zwt;
-    tilesZero.stairs = zst;
-  });
-  void Promise.all([loadImage('map/wall_lamp.png'), loadImage('map/candle.png')]).then(
-    ([lamp, candle]) => {
-      lightArt.lamp = lamp;
-      lightArt.candle = candle;
-    },
-  );
-
   fitCanvas();
   /*
    * 【先画一次再进循环】—— 开局的日志行是设置阶段写进去的，
@@ -1687,7 +1500,6 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     cancelAnimationFrame(raf);
     window.removeEventListener('resize', onResize);
     rig.destroy();
-    sprites.clear();
     wrap.remove();
     wheel.remove();
     attackBtn.remove();
