@@ -42,8 +42,9 @@ import {
   roomCleared,
   tryPickup,
 } from '@core/rt/index.js';
-import { ARCHIVIST_HEAVY, ARCHIVIST_LIGHT } from '@data/rt/actions.js';
-import { findItem, findRole } from '@core/content';
+import { ARCHIVIST_HEAVY, ARCHIVIST_LIGHT, NURSE_HEAVY, NURSE_LIGHT } from '@data/rt/actions.js';
+import { findItem, findRole, loadPacks } from '@core/content';
+import { CORE_PACK } from '@data/index';
 import { generateRoom } from '@core/rt/dungeon.js';
 import { CRAWLER, ORDERLY } from '@data/rt/enemies.js';
 import { toSpawnTemplate } from '@data/rt/enemies.js';
@@ -942,6 +943,11 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
    *           直接相加的话记梦者打一下凭空多 5 点，动作表就废了
    *   tags    剧情选项的门控，必须有 —— 不然 healer 专属选项选不出来
    */
+  // 剧情选项靠 findRole / findStory。这两件事只查已装上的内容包。
+  // 主线从菜单直接进实时层，不会走回合制的 createInitialState，
+  // 所以必须在这里装包。否则角色永远查不到，退回记梦者，护士的选项出不来。
+  loadPacks([CORE_PACK]);
+
   // ?role= 让调试时能直接开某个角色，不用点穿选人界面
   const roleParam = qs.get('role');
   const role =
@@ -1018,10 +1024,11 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     state.nextItemUid++;
   }
   if (player !== undefined) {
-    player.attack = ARCHIVIST_LIGHT;
-    player.heavyAttack = ARCHIVIST_HEAVY;
-    player.hp = 22;
-    player.hpMax = 22;
+    const nurse = role?.id === 'ward_nurse';
+    player.attack = nurse ? NURSE_LIGHT : ARCHIVIST_LIGHT;
+    player.heavyAttack = nurse ? NURSE_HEAVY : ARCHIVIST_HEAVY;
+    player.hp = role?.hp ?? 22;
+    player.hpMax = role?.hp ?? 22;
   }
 
   /** 按定义造一个敌人并挂上 AI。坐标会被安全化，保证不落在墙里 */
@@ -1057,7 +1064,7 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   placeFoe(ORDERLY, clampCell(midC + 6, plan.cols), clampCell(midR, plan.rows));
 
   if (player !== undefined) {
-    void loadSprites('dream_archivist').then((s) => sprites.set(player.id, s));
+    void loadSprites(role?.id ?? 'dream_archivist').then((s) => sprites.set(player.id, s));
 
     /*
      * 玩家手里那根蜡烛。
