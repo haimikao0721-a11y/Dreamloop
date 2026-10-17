@@ -754,7 +754,7 @@ describe('返回主菜单', () => {
 
 describe('实时层原型', () => {
   it('能挂载：画出 canvas、状态栏和返回按钮', async () => {
-    const { startRtPrototype, planRoom } = await import('../src/ui-web/rt-view.js');
+    const { startRtPrototype, planRoom, ART } = await import('../src/ui-web/rt-view.js');
     const { TILE } = await import('../src/core/rt/index.js');
     const teardown = startRtPrototype(document.body);
 
@@ -767,7 +767,9 @@ describe('实时层原型', () => {
       // 房间尺寸【跟着屏幕算】，不能再写死 21×15。
       // 之前写死过，结果手机竖屏上只有 1 倍缩放，玩家进去看到一片黑。
       const plan = planRoom(window.innerWidth, window.innerHeight);
-      expect(canvas?.width).toBe(plan.cols * TILE);
+      // 画布像素是世界格子的 ART 倍。显示尺寸不跟着放大，
+      // 多出来的像素用来把素材画细，见 rt-view 的 ART。
+      expect(canvas?.width).toBe(plan.cols * TILE * ART);
       /*
        * 高度【多一格】—— 顶部那格留给最上面那排墙的顶面。
        *
@@ -775,7 +777,7 @@ describe('实时层原型', () => {
        * 不留余量的话最上面那排会被裁掉，房间顶部看起来是平的。
        * 这不是 bug，是画布尺寸的一部分。
        */
-      expect(canvas?.height).toBe(plan.rows * TILE + TILE);
+      expect(canvas?.height).toBe((plan.rows * TILE + TILE) * ART);
 
       /*
        * 缩放选择。整数倍是首选，但【浪费太多时就不值了】——

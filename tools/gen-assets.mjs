@@ -145,6 +145,15 @@ const THEME_ZERO = {
    ══════════════════════════════════════════════════════════════ */
 
 const TILE = 16;
+/**
+ * 输出 PNG 的像素倍数。
+ *
+ * 字符画仍按 16×16 / 16×24 来画（一格一个字符，diff 还看得懂）。
+ * 写进文件时每个字符拆成 ART×ART 个像素，边上加高光和阴影 ——
+ * 游戏把这些像素缩回原来的页面大小，多出来的才是能看见的细节。
+ * 必须和 src/ui-web/rt-view.ts 的 ART 相同。
+ */
+const ART = 2;
 
 /**
  * 医院地砖。
@@ -158,21 +167,21 @@ const TILE = 16;
  * 铺开之后是 16px 一条极暗的线，地板退到后面去了。
  */
 const FLOOR = [
-  'dddddddddddddddd',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvsvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvsvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvsvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvsvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvsvvvvv',
-  'dvvvvvvvvvvvvvvv',
+  'lsssssssssssssss',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvsvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvsvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvsvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svsvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvsvvvvv',
+  'svvvvvvvvvvvvvvv',
   'dvvvvvvvvvvvvvvv',
 ];
 
@@ -181,21 +190,21 @@ const FLOOR = [
  * 但污渍也要压暗 —— 第一版用锈色 r(#8a4a3a) 太跳，铺满一屏全是橙斑。
  */
 const FLOOR_STAINED = [
-  'dddddddddddddddd',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvddvvvvvvvvvv',
-  'dvddddvvvvvvvvvv',
-  'dvvddvvvvvvvsvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvddddvvvv',
-  'dvvvvvvvddddvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvsvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvvvvvvvv',
-  'dvvvvvvvvdvvvvvv',
-  'dvvvvvvvvvvvvvvv',
+  'lsssssssssssssss',
+  'svvvvvvvvvvvvvvv',
+  'svvvddvvvvvvvvvv',
+  'svddddvvvvvvvvvv',
+  'svvddvvvvvvvsvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvddddvvvv',
+  'svvvvvvvRdddvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvsvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvvvvvvvv',
+  'svvvvvvvvdvvvvvv',
+  'svvvvvvvvvvvvvvv',
   'dvvvvvvvvvvvvvvv',
 ];
 
@@ -205,21 +214,21 @@ const FLOOR_STAINED = [
  */
 const WALL = [
   'llllllllllllllll',
+  'eeeeeeeeeeeeeeee',
   'ssssssssssssssss',
-  'dddsdddsdddsddds',
-  'dddsdddsdddsddds',
-  'dddsdddsdddsddds',
-  'dddsdddsdddsddds',
-  'dddsdddsdddsddds',
-  'dddsdddsdddsddds',
+  'dvvvvvvvvvvvvvvd',
+  'dvvvvvvvvvvvvvvd',
+  'dvvvvvvsvvvvvvvd',
+  'dvvvvvvvvvvvvvvd',
   'ssssssssssssssss',
-  'dsdddsdddsdddsdd',
-  'dsdddsdddsdddsdd',
-  'dsdddsdddsdddsdd',
-  'dsdddsdddsdddsdd',
-  'dsdddsdddsdddsdd',
-  'dsdddsdddsdddsdd',
+  'dddddddddddddddd',
+  'dkvvvvvvvvvvvvsd',
+  'dkvvvvvvvvvvvvsd',
+  'dkvvvvvsvvvvvvsd',
+  'dkvvvvvvvvvvvvsd',
+  'dddddddddddddddd',
   'kkkkkkkkkkkkkkkk',
+  'dddddddddddddddd',
 ];
 
 /**
@@ -252,19 +261,19 @@ const WALL = [
  */
 const WALL_TOP = [
   'kkkkkkkkkkkkkkkk',
+  'eufeeeeeeeeeeufe',
+  'uffffffffffffffu',
   'ffffffffffffffff',
-  'fffuffffffffffff',
+  'ffffufffffffffff',
+  'ffffffffffffffff',
   'ffffffffufffffff',
   'ffffffffffffffff',
   'fuffffffffffffff',
   'ffffffffffffffff',
-  'ffffffffufffffff',
-  'ffffffffffffffff',
-  'ffffufffffffffff',
   'ffffffffffffffff',
   'ffffffffffffufff',
   'ffffffffffffffff',
-  'ffffffffffffffff',
+  'eeeeeeeeeeeeeeee',
   'pppppppppppppppp',
   'dddddddddddddddd',
 ];
@@ -272,21 +281,21 @@ const WALL_TOP = [
 /** 门：门框 + 竖板门身 + 门把手。要能一眼和墙区分 */
 const DOOR = [
   'ssssssssssssssss',
+  'slvvvvvvvvvvvlss',
+  'slvdddddddddvlss',
+  'slvdddddddddvlss',
+  'slvdddddddddvlss',
+  'slvvvvvvvvvvvlss',
+  'slvdddddddddvlss',
+  'slvdddddddddvlss',
+  'slvdddddddddvlss',
+  'slvdddddddccvlss',
+  'slvdddddddccvlss',
+  'slvdddddddddvlss',
+  'slvvvvvvvvvvvlss',
   'ssssssssssssssss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsccddss',
-  'ssdddsdddsccddss',
-  'ssdddsdddsddddss',
-  'ssdddsdddsddddss',
-  'ssssssssssssssss',
-  'ssssssssssssssss',
+  'skkkkkkkkkkkkkss',
+  'dddddddddddddddd',
 ];
 
 /** 楼梯：一级级收窄、变暗。每一级都有亮边（踏面）和暗面（立面） */
@@ -294,7 +303,6 @@ const STAIRS = [
   'eeeeeeeeeeeeeeee',
   'elllllllllllllle',
   'edddddddddddddde',
-  'evvvvvvvvvvvvvve',
   'evllllllllllllve',
   'evddddddddddddve',
   'evvvvvvvvvvvvvve',
@@ -304,7 +312,8 @@ const STAIRS = [
   'evvvllllllllvvve',
   'evvvddddddddvvve',
   'evvvvvvvvvvvvvve',
-  'evvvvvvvvvvvvvve',
+  'evvvvlllllvvvvve',
+  'evvvvdddddvvvvve',
   'evkkkkkkkkkkkkve',
   'eeeeeeeeeeeeeeee',
 ];
@@ -314,35 +323,35 @@ const CANDLE = [
   '................',
   '.......C........',
   '......CcC.......',
-  '......ccc.......',
+  '.....CcccC......',
   '......ccc.......',
   '.......w........',
-  '......bbb.......',
   '......bwb.......',
   '......bwb.......',
-  '......bwb.......',
+  '......bRb.......',
   '......bwb.......',
   '......bwb.......',
   '.....bbwbb......',
   '.....bbbbb......',
   '....sssssss.....',
+  '...sssssssss....',
   '................',
 ];
 
 /** 固定光源：墙上的烛台。拿不走，所以做成"长在墙上"的样子 */
 const WALL_LAMP = [
   '................',
-  '................',
   '.......CC.......',
   '......CcCC......',
   '......cCCc......',
-  '.......ccc......',
+  '.......cc.......',
   '........w.......',
   '.......bbb......',
-  '.......bbb......',
   '......bbbbb.....',
-  '.....sssssss....',
-  '.....sssssss....',
+  '.....bbbbbbb....',
+  '....ssssssss....',
+  '....ssssssss....',
+  '................',
   '................',
   '................',
   '................',
@@ -394,8 +403,76 @@ function tileRgba(name, art, palette) {
   return rgba;
 }
 
+/**
+ * 把一张角色/瓦片放大 ART 倍，并在每个原像素的 2×2 里分出明暗。
+ *
+ * 纯复制会在缩回页面之后和原来一模一样，多出来的像素等于没画。
+ * 上沿、左沿偏亮，下沿、右沿偏暗 —— 光仍从上方来，和墙顶面同一套。
+ */
+function present(rgba, w, h) {
+  const W = w * ART;
+  const H = h * ART;
+  const out = Buffer.alloc(W * H * 4);
+  const sample = (x, y) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return null;
+    const i = (y * w + x) * 4;
+    if (rgba[i + 3] === 0) return null;
+    return [rgba[i], rgba[i + 1], rgba[i + 2]];
+  };
+  const mix = (rgb, gain, bias) =>
+    rgb.map((c) => Math.max(0, Math.min(255, Math.round(c * gain + bias))));
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = sample(x, y);
+      if (p === null) continue;
+      const edgeT = sample(x, y - 1) === null;
+      const edgeL = sample(x - 1, y) === null;
+      const edgeB = sample(x, y + 1) === null;
+      const edgeR = sample(x + 1, y) === null;
+      const hi = mix(p, 1.28, 10);
+      const sh = mix(p, 0.68, 0);
+      const cells = [
+        [0, 0, edgeT || edgeL ? hi : p],
+        [1, 0, edgeT ? hi : p],
+        [0, 1, edgeL ? p : edgeB ? sh : p],
+        [1, 1, edgeB || edgeR ? sh : p],
+      ];
+      for (const [dx, dy, col] of cells) {
+        const i = ((y * ART + dy) * W + (x * ART + dx)) * 4;
+        out[i] = col[0];
+        out[i + 1] = col[1];
+        out[i + 2] = col[2];
+        out[i + 3] = 255;
+      }
+    }
+  }
+  return out;
+}
+
 function renderTile(name, art, palette) {
-  return encodePng(TILE, TILE, tileRgba(name, art, palette));
+  const src = tileRgba(name, art, palette);
+  return encodePng(TILE * ART, TILE * ART, present(src, TILE, TILE));
+}
+
+/** 一帧字符画 → 放大并分出明暗之后的 PNG */
+function encodePresented(frame, palette, name) {
+  const src = spriteRgba(name, frame, palette);
+  return encodePng(SPRITE_W * ART, SPRITE_H * ART, present(src, SPRITE_W, SPRITE_H));
+}
+
+/** 多帧横排。宽度必须是 (帧数 × 角色宽 × ART)，渲染端按这个切 */
+function buildPresentedSheet(frames, palette) {
+  const fw = SPRITE_W * ART;
+  const fh = SPRITE_H * ART;
+  const rgba = Buffer.alloc(frames.length * fw * fh * 4);
+  frames.forEach((frame, idx) => {
+    const src = present(spriteRgba(`sheet#${idx}`, frame, palette), SPRITE_W, SPRITE_H);
+    for (let y = 0; y < fh; y++) {
+      src.copy(rgba, (y * frames.length * fw + idx * fw) * 4, y * fw * 4, (y + 1) * fw * 4);
+    }
+  });
+  return encodePng(frames.length * fw, fh, rgba);
 }
 
 /**
@@ -526,11 +603,9 @@ const THEMES = {
    角色精灵（16×24 —— 比瓦片高，因为人要"站"在格子上）
    ══════════════════════════════════════════════════════════════
 
-   身体只画一次，武器按帧叠加。
-
-   为什么要这样拆：帧数据的本质是"同一个身体，动作在不同时间点"。
-   把身体复制三份手改，改一处体型就要改三处 —— 那样帧数一多必然失控。
-   叠加的好处是加一帧只需要写几个武器像素。
+   每个动作是一整帧，不是在待机图上贴几个武器像素。
+   走路两帧换脚，攻击三帧是起手 → 判定 → 收招。
+   理智归零仍是同一批像素、另一套调色板。
    ══════════════════════════════════════════════════════════════ */
 
 const SPRITE_W = 16;
@@ -566,49 +641,267 @@ const ARCHIVIST = [
   '................',
   '.....kkkkkk.....',
   '....kddddddk....',
-  '....kdppppdk....',
-  '....kpkppkpk....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk...',
   '....kppppppk....',
   '.....kppppk.....',
-  '......kppk......',
+  '......kkkk......',
   '....kkkkkkkk....',
-  '...kuuuuuukk....',
-  '..kuufffuuueek..',
-  '..kuffffuuueek..',
-  '..kufbbbuuueek..',
-  '..kufbbbuuueek..',
-  '..kuffffuuueek..',
-  '..kuffffuuueek..',
-  '...kufffuuueek..',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufk..',
+  '..kufebbbbeufk..',
+  '..kufebwwbCufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufk..',
+  '...kuffffffuk...',
   '....kkkkkkkk....',
-  '....ksskkssk....',
-  '....ksskkssk....',
-  '....ksskkssk....',
-  '....kkk..kkk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kk....kk....',
+];
+
+/** 迈左脚：左脚伸到画框底，右脚抬起 */
+const ARCHIVIST_WALK_A = [
   '................',
+  '................',
+  '.....kkkkkk.....',
+  '....kddddddk....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '......kkkk......',
+  '....kkkkkkkk....',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufk..',
+  '..kufebbbbeufk..',
+  '..kufebwwbCufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufk..',
+  '...kuffffffuk...',
+  '....kkkkkkkk....',
+  '....kss..ssk....',
+  '....ks....sk....',
+  '...kk......k....',
+  '....k......kk...',
+];
+
+/** 迈右脚 */
+const ARCHIVIST_WALK_B = [
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '....kddddddk....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '......kkkk......',
+  '....kkkkkkkk....',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufk..',
+  '..kufebbbbeufk..',
+  '..kufebwwbCufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufk..',
+  '...kuffffffuk...',
+  '....kkkkkkkk....',
+  '....kss..ssk....',
+  '....sk....ks....',
+  '....k......kk...',
+  '...kk......k....',
+];
+
+/** 起手：笔收到脑后，还没扫出来 */
+const ARCHIVIST_ATK_1 = [
+  '..C.............',
+  '.cCk............',
+  '.cc.kkkkkk......',
+  '.c.kddddddk.....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '......kkkk......',
+  '....kkkkkkkk....',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufk..',
+  '..kufebbbbeufk..',
+  '..kufebwwbeufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufk..',
+  '...kuffffffuk...',
+  '....kkkkkkkk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kk....kk....',
+];
+
+/** 判定：笔扫到身前，只有这一帧能打到人 */
+const ARCHIVIST_ATK_2 = [
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '....kddddddk....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk..C',
+  '....kppppppkc.C.',
+  '.....kppppk..cc.',
+  '......kkkk......',
+  '....kkkkkkkk....',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufkkc',
+  '..kufebbbbeufkC.',
+  '..kufebwwbeufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufk..',
+  '...kuffffffuk...',
+  '....kkkkkkkk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kss..ssk....',
+  '....kk....kk....',
+];
+
+/** 收招：笔垂到身侧 */
+const ARCHIVIST_ATK_3 = [
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '....kddddddk....',
+  '...kdppppppdk...',
+  '...kdpkkkkpdk...',
+  '...kdppppppdk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '......kkkk......',
+  '....kkkkkkkk....',
+  '...kuuuuuuuuk...',
+  '..kuffffffuffk..',
+  '..kufeeeeeeufk..',
+  '..kufebbbbeufk..',
+  '..kufebwwbeufk..',
+  '..kufeeeeeeufk..',
+  '..kufeeeeeeufkc.',
+  '...kuffffffukcC.',
+  '....kkkkkkkk.cc.',
+  '....kss..ssk....',
+  '....kss..sskc...',
+  '....kss..ssk....',
+  '....kk....kk....',
 ];
 
 /**
- * 值夜护士：结实、白制服、护士帽。
- *
- * 和记梦者同一套画法（轮廓 + 上亮下暗 + 肩比头宽），
- * 但体型更宽 —— 两个角色站一起要一眼分得出谁是谁。
+ * 值夜护士：结实、白制服、帽上一点红。
+ * 比记梦者宽一圈，灯是她的武器，走路时两脚交替迈出。
  */
 const NURSE = [
   '................',
-  '................',
-  '....wwwwwwww....',
-  '....kbbbbbbk....',
-  '....kbpppppk....',
-  '....kpkppkpk....',
-  '....kpppppbk....',
+  '....wwwrwwww....',
+  '...wwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk...',
+  '...kppppppppk...',
+  '....kppppppk....',
   '.....kppppk.....',
-  '......kppk......',
   '...kkkkkkkkkk...',
   '..kbbbbbbbbbbk..',
   '..kbwwwwwwwwbk..',
   '..kwwwwwwwwwwk..',
   '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kbwwwwwwwwbk..',
+  '...kkkkkkkkkk...',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kk...kkk....',
+  '.....k....k.....',
+  '................',
+];
+
+const NURSE_WALK_A = [
+  '................',
+  '....wwwrwwww....',
+  '...wwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk...',
+  '...kppppppppk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kbwwwwwwwwbk..',
+  '...kkkkkkkkkk...',
+  '....kbbkkbbk....',
+  '...kbb...kbb....',
+  '...kb.....kb....',
+  '....k......k....',
+  '................',
+  '................',
+];
+
+const NURSE_WALK_B = [
+  '................',
+  '....wwwrwwww....',
+  '...wwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk...',
+  '...kppppppppk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kbwwwwwwwwbk..',
+  '...kkkkkkkkkk...',
+  '....kbbkkbbk....',
+  '....bbk...kbb...',
+  '....bk.....kb...',
+  '....k......k....',
+  '................',
+  '................',
+];
+
+const NURSE_ATK_1 = [
+  '.C..............',
+  'cCc.wwwrwwww....',
+  '.ccwwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk...',
+  '...kppppppppk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbk..',
+  '..kwwwwwwwwwwk..',
   '..kwwrrrrrrwwk..',
   '..kwwwwwwwwwwk..',
   '..kwwwwwwwwwwk..',
@@ -617,44 +910,64 @@ const NURSE = [
   '....kbbkkbbk....',
   '....kbbkkbbk....',
   '....kbbkkbbk....',
-  '....kbbk.kbbk...',
-  '.....kk...kk....',
+  '....kk...kkk....',
+  '.....k....k.....',
+  '................',
 ];
 
-/**
- * 攻击帧：把武器叠到身体上。
- *
- * 每个帧就是一组 [x, y, 字符]。三帧对应帧数据的三段：
- *
- *   startup  起手 —— 武器收到身后，还没出来（对手能看见并躲）
- *   active   判定 —— 武器扫到身前，这就是能打到人的窗口
- *   recovery 收招 —— 武器垂下去，此时挨打最疼
- *
- * 武器必须贴着身体走。离远了看起来像"飘着一块光"，
- * 玩家读不出"这一下打向哪里"，帧数也就白设计了。
- */
-const SWINGS = {
-  startup: [
-    [2, 8, 'c'], [1, 9, 'c'], [2, 10, 'C'], [3, 11, 'c'],
-  ],
-  active: [
-    [13, 10, 'c'], [14, 11, 'C'], [13, 12, 'C'], [12, 13, 'c'],
-  ],
-  recovery: [
-    [11, 18, 'c'], [12, 19, 'C'], [12, 20, 'c'], [11, 21, 'c'],
-  ],
-};
+const NURSE_ATK_2 = [
+  '................',
+  '....wwwrwwww....',
+  '...wwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk..C',
+  '...kppppppppkcC.',
+  '....kppppppk.ccc',
+  '.....kppppk.....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbkk.',
+  '..kwwwwwwwwwwkC.',
+  '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kbwwwwwwwwbk..',
+  '...kkkkkkkkkk...',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kbbkkbbk....',
+  '....kk...kkk....',
+  '.....k....k.....',
+  '................',
+];
 
-/** 把叠加层画到身体上，返回新的字符画（不改原数组） */
-function overlay(body, cells) {
-  const out = body.map((row) => row.split(''));
-  for (const [x, y, ch] of cells) {
-    if (y < 0 || y >= out.length) continue;
-    if (x < 0 || x >= out[y].length) continue;
-    out[y][x] = ch;
-  }
-  return out.map((row) => row.join(''));
-}
+const NURSE_ATK_3 = [
+  '................',
+  '....wwwrwwww....',
+  '...wwwwwwwwww...',
+  '....kkkkkkkk....',
+  '...kppppppppk...',
+  '...kpkkppkkpk...',
+  '...kppppppppk...',
+  '....kppppppk....',
+  '.....kppppk.....',
+  '...kkkkkkkkkk...',
+  '..kbbbbbbbbbbk..',
+  '..kbwwwwwwwwbk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwrrrrrrwwk..',
+  '..kwwwwwwwwwwk..',
+  '..kwwwwwwwwwwkc.',
+  '..kbwwwwwwwwbkC.',
+  '...kkkkkkkkkkcc.',
+  '....kbbkkbbk....',
+  '....kbbkkbbc....',
+  '....kbbkkbbk....',
+  '....kk...kkk....',
+  '.....k....k.....',
+  '................',
+];
 
 /* ── 敌人 ── */
 
@@ -672,22 +985,157 @@ const CRAWLER = [
   '................',
   '................',
   '................',
-  '................',
-  '................',
-  '................',
-  '......kkkk......',
-  '....kkmmmmkk....',
-  '...kmmmmmmmmk...',
-  '..kmmkkkkkkmmk..',
-  '..kmkHHHHHHkmk..',
-  '..kmkHkkkkHkmk..',
-  '..kmkHHHHHHkmk..',
-  '..kmmkkkkkkmmk..',
-  '...kmmmmmmmmk...',
-  '....kkkkkkkk....',
+  '.....kkkkkk.....',
+  '...kkmmmmmmkk...',
+  '..kmFFFFFFFFFmk.',
+  '.kmFFHHHHHHFFFmk',
+  '.kmFkHHHHHHkFFmk',
+  '.kmkkkkkkkkkkmk.',
+  '.kmHHHHHHHHHHmk.',
+  '..kmFFFFFFFFFmk.',
+  '...kkmmmmmmkk...',
   '..k..k....k..k..',
   '.k...k....k...k.',
   'k....k....k....k',
+  '.k...k....k...k.',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const CRAWLER_WALK_A = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '...kkmmmmmmkk...',
+  '..kmFFFFFFFFFmk.',
+  '.kmFFHHHHHHFFFmk',
+  '.kmFkHHHHHHkFFmk',
+  '.kmkkkkkkkkkkmk.',
+  '.kmHHHHHHHHHHmk.',
+  '..kmFFFFFFFFFmk.',
+  '...kkmmmmmmkk...',
+  '.k..k......k..k.',
+  'k...k......k...k',
+  '.k...k....k...k.',
+  '..k..k....k..k..',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const CRAWLER_WALK_B = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '...kkmmmmmmkk...',
+  '..kmFFFFFFFFFmk.',
+  '.kmFFHHHHHHFFFmk',
+  '.kmFkHHHHHHkFFmk',
+  '.kmkkkkkkkkkkmk.',
+  '.kmHHHHHHHHHHmk.',
+  '..kmFFFFFFFFFmk.',
+  '...kkmmmmmmkk...',
+  '..k..k....k..k..',
+  'k...k......k...k',
+  '.k...k....k...k.',
+  '..k..k....k..k..',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const CRAWLER_ATK_1 = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '....kkkkkk......',
+  '..kkmmmmmmkk....',
+  '.kmFFFFFFFFFmk..',
+  'kmFFHHHHHHFFFmk.',
+  'kmFkHHHHHHkFFmk.',
+  'kmkkkkkkkkkkmk..',
+  'kmHHHHHHHHHHmk..',
+  '.kmFFFFFFFFFmk..',
+  '..kkmmmmmmkk....',
+  '.k.k......k.k...',
+  'k..k......k..k..',
+  '.k.k......k.k...',
+  '..k........k....',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const CRAWLER_ATK_2 = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '......kkkkk.....',
+  '....kkmmmmmkk...',
+  '...kmFFFFFFFmkk.',
+  '..kmFHHHHHHFmkkC',
+  '..kmFkHHHHkFmkCc',
+  '..kmkkkkkkkkmkc.',
+  '...kmHHHHHHmCCC.',
+  '...kmFFFFFFFFmk.',
+  '....kkmmmmmmkk..',
+  '...k.k....k.k...',
+  '..k..k....k..k..',
+  '.k...k....k...k.',
+  'k....k....k....k',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+];
+
+const CRAWLER_ATK_3 = [
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '................',
+  '.....kkkkkk.....',
+  '...kkmmmmmmkk...',
+  '..kmFFFFFFFFFmk.',
+  '.kmFFHHHHHHFFFmk',
+  '.kmFkHHHHHHkFFmk',
+  '.kmkkkkkkkkkkmk.',
+  '.kmHHHHHHHHHHmk.',
+  '..kmFFFFFFFFFmk.',
+  '...kkmmmmmmkk...',
+  'k..k........k..k',
+  '.k..k......k..k.',
+  '..k..k....k..k..',
+  '...k......k.....',
+  '................',
+  '................',
+  '................',
   '................',
   '................',
 ];
@@ -704,90 +1152,199 @@ const CRAWLER = [
  */
 const ORDERLY = [
   '................',
-  '................',
-  '....kkkkkkkk....',
-  '...kffffffffk...',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk..',
+  '..kfppppppppfk..',
   '...kfppppppfk...',
-  '...kfpkppkpfk...',
-  '...kfppppppfk...',
-  '....kfppppfk....',
-  '.....kfppfk.....',
-  '...kffffffffk...',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
   '..kffffffffffk..',
   '.kffeeeeeeeeffk.',
   'kffeeeeeeeeeeffk',
-  'kffeelllleeeeffk',
-  'kffeelllleeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffk',
   'kffeeeeeeeeeeffk',
   'kffeeeeeeeeeeffk',
   '.kffeeeeeeeeffk.',
   '..kkkkkkkkkkkk..',
-  '...kffkkkkffk...',
-  '...kffkkkkffk...',
-  '...kffkkkkffk...',
   '...kffk..kffk...',
-  '....kk....kk....',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kkk....kkk...',
+  '....k......k....',
+  '................',
 ];
 
-/** 爬行物的扑击：整个身体前倾，武器就是它的嘴 */
-const CRAWLER_LUNGE = {
-  startup: [
-    [8, 12, 'm'], [9, 13, 'm'], [8, 14, 'm'], [7, 13, 'm'],
-  ],
-  active: [
-    [12, 11, 'm'], [13, 12, 'C'], [13, 13, 'C'], [12, 14, 'm'], [11, 13, 'm'],
-  ],
-  recovery: [
-    [4, 17, 'm'], [3, 18, 'm'],
-  ],
-};
+const ORDERLY_WALK_A = [
+  '................',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk..',
+  '..kfppppppppfk..',
+  '...kfppppppfk...',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '.kffeeeeeeeeffk.',
+  'kffeeeeeeeeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffk',
+  'kffeeeeeeeeeeffk',
+  'kffeeeeeeeeeeffk',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkk..',
+  '...kffk..kffk...',
+  '..kffk....kff...',
+  '..kff......kf...',
+  '...k........k...',
+  '....k...........',
+  '................',
+];
 
-/** 护工的下砸：抬手很高、砸下来很重 —— 起手最长，最该被读出来 */
-const ORDERLY_SLAM_SWING = {
-  startup: [
-    [2, 4, 'c'], [1, 5, 'c'], [2, 6, 'C'], [3, 7, 'c'], [2, 8, 'c'],
-  ],
-  active: [
-    [12, 12, 'c'], [13, 13, 'C'], [14, 14, 'C'], [13, 15, 'c'], [12, 16, 'c'],
-  ],
-  recovery: [
-    [11, 19, 'c'], [12, 20, 'C'], [12, 21, 'c'],
-  ],
-};
+const ORDERLY_WALK_B = [
+  '................',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk..',
+  '..kfppppppppfk..',
+  '...kfppppppfk...',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '.kffeeeeeeeeffk.',
+  'kffeeeeeeeeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffk',
+  'kffeeeeeeeeeeffk',
+  'kffeeeeeeeeeeffk',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkk..',
+  '...kffk..kffk...',
+  '...kff....kffk..',
+  '...fk......kff..',
+  '...k........k...',
+  '...........k....',
+  '................',
+];
+
+const ORDERLY_ATK_1 = [
+  'C...............',
+  'cCkkkkkkkkkk....',
+  'ccffffffffffk...',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk..',
+  '..kfppppppppfk..',
+  '...kfppppppfk...',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '.kffeeeeeeeeffk.',
+  'kffeeeeeeeeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffk',
+  'kffeeeeeeeeeeffk',
+  'kffeeeeeeeeeeffk',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkk..',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kkk....kkk...',
+  '....k......k....',
+  '................',
+];
+
+const ORDERLY_ATK_2 = [
+  '................',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk.C',
+  '..kfppppppppfkcC',
+  '...kfppppppfkccc',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
+  '..kffffffffffkk.',
+  '.kffeeeeeeeeffkC',
+  'kffeeeeeeeeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffk',
+  'kffeeeeeeeeeeffk',
+  'kffeeeeeeeeeeffk',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkk..',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kkk....kkk...',
+  '....k......k....',
+  '................',
+];
+
+const ORDERLY_ATK_3 = [
+  '................',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '..kfppppppppfk..',
+  '..kfpkkppkkpfk..',
+  '..kfppppppppfk..',
+  '...kfppppppfk...',
+  '....kffffffk....',
+  '...kkkkkkkkkk...',
+  '..kffffffffffk..',
+  '.kffeeeeeeeeffk.',
+  'kffeeeeeeeeeeffk',
+  'kffeuuuuuuuueffk',
+  'kffeuuuuuuuueffc',
+  'kffeeeeeeeeeeffC',
+  'kffeeeeeeeeeeffc',
+  '.kffeeeeeeeeffk.',
+  '..kkkkkkkkkkkcc.',
+  '...kffk..kffkc..',
+  '...kffk..kffk...',
+  '...kffk..kffk...',
+  '...kkk....kkk...',
+  '....k......k....',
+  '................',
+];
 
 /** 角色 → 一组命名的帧 */
 const CHARACTERS = {
   dream_archivist: {
     idle: ARCHIVIST,
-    walk_a: overlay(ARCHIVIST, [[5, 22, 'd'], [10, 22, '.']]),
-    walk_b: overlay(ARCHIVIST, [[5, 22, '.'], [10, 22, 'd']]),
-    attack_startup: overlay(ARCHIVIST, SWINGS.startup),
-    attack_active: overlay(ARCHIVIST, SWINGS.active),
-    attack_recovery: overlay(ARCHIVIST, SWINGS.recovery),
+    walk_a: ARCHIVIST_WALK_A,
+    walk_b: ARCHIVIST_WALK_B,
+    attack_startup: ARCHIVIST_ATK_1,
+    attack_active: ARCHIVIST_ATK_2,
+    attack_recovery: ARCHIVIST_ATK_3,
   },
   ward_nurse: {
     idle: NURSE,
-    walk_a: overlay(NURSE, [[5, 22, 'b'], [10, 22, '.']]),
-    walk_b: overlay(NURSE, [[5, 22, '.'], [10, 22, 'b']]),
-    attack_startup: overlay(NURSE, SWINGS.startup),
-    attack_active: overlay(NURSE, SWINGS.active),
-    attack_recovery: overlay(NURSE, SWINGS.recovery),
+    walk_a: NURSE_WALK_A,
+    walk_b: NURSE_WALK_B,
+    attack_startup: NURSE_ATK_1,
+    attack_active: NURSE_ATK_2,
+    attack_recovery: NURSE_ATK_3,
   },
   crawler: {
     idle: CRAWLER,
-    walk_a: overlay(CRAWLER, [[4, 18, 'm'], [11, 18, '.']]),
-    walk_b: overlay(CRAWLER, [[4, 18, '.'], [11, 18, 'm']]),
-    attack_startup: overlay(CRAWLER, CRAWLER_LUNGE.startup),
-    attack_active: overlay(CRAWLER, CRAWLER_LUNGE.active),
-    attack_recovery: overlay(CRAWLER, CRAWLER_LUNGE.recovery),
+    walk_a: CRAWLER_WALK_A,
+    walk_b: CRAWLER_WALK_B,
+    attack_startup: CRAWLER_ATK_1,
+    attack_active: CRAWLER_ATK_2,
+    attack_recovery: CRAWLER_ATK_3,
   },
   orderly: {
     idle: ORDERLY,
-    walk_a: overlay(ORDERLY, [[4, 22, 'f'], [11, 22, '.']]),
-    walk_b: overlay(ORDERLY, [[4, 22, '.'], [11, 22, 'f']]),
-    attack_startup: overlay(ORDERLY, ORDERLY_SLAM_SWING.startup),
-    attack_active: overlay(ORDERLY, ORDERLY_SLAM_SWING.active),
-    attack_recovery: overlay(ORDERLY, ORDERLY_SLAM_SWING.recovery),
+    walk_a: ORDERLY_WALK_A,
+    walk_b: ORDERLY_WALK_B,
+    attack_startup: ORDERLY_ATK_1,
+    attack_active: ORDERLY_ATK_2,
+    attack_recovery: ORDERLY_ATK_3,
   },
 };
 
@@ -795,6 +1352,9 @@ const CHARACTERS = {
 function spriteRgba(name, art, palette) {
   const h = art.length;
   const w = art[0].length;
+  if (w !== SPRITE_W || h !== SPRITE_H) {
+    throw new Error(`${name}: 尺寸 ${w}×${h}，应为 ${SPRITE_W}×${SPRITE_H}`);
+  }
   const rgba = Buffer.alloc(w * h * 4);
   for (let y = 0; y < h; y++) {
     const row = art[y];
@@ -978,14 +1538,14 @@ for (const [charName, frames] of Object.entries(CHARACTERS)) {
     // 单帧动作出单图，多帧动作出精灵图
     const png =
       art.length === 1
-        ? encodePng(SPRITE_W, SPRITE_H, spriteRgba(`${charName}/${actionName}`, art[0], THEME_NORMAL))
-        : buildSheet(art, THEME_NORMAL);
+        ? encodePresented(art[0], THEME_NORMAL, `${charName}/${actionName}`)
+        : buildPresentedSheet(art, THEME_NORMAL);
     writeFileSync(join(dir, `${actionName}.png`), png);
 
     const zero =
       art.length === 1
-        ? encodePng(SPRITE_W, SPRITE_H, spriteRgba(`${charName}/${actionName}`, art[0], THEME_ZERO))
-        : buildSheet(art, THEME_ZERO);
+        ? encodePresented(art[0], THEME_ZERO, `${charName}/${actionName}`)
+        : buildPresentedSheet(art, THEME_ZERO);
     writeFileSync(join(dir, `${actionName}_zero.png`), zero);
     spriteCount += art.length;
   }

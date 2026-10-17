@@ -51,9 +51,23 @@ import type { RtEnemyDef } from '@data/rt/enemies.js';
 
 const ROOM_W = 21;
 const ROOM_H = 15;
-/** 精灵尺寸，和 tools/gen-assets.mjs 里的一致 */
+/**
+ * 精灵在世界上占多大（和格子同一套坐标）。
+ * 图片本身是这个的 ART 倍 —— 见下面。
+ */
 const SPR_W = 16;
 const SPR_H = 24;
+/**
+ * 一张图里，一个世界像素用几个绘画像素。
+ *
+ * 16×24 的角色放大到满屏，一个像素变成一大块，再细的笔也画不进去。
+ * 素材按 2 倍像素画（瓦片 32、角色 32×48），画布也按 2 倍建。
+ * 显示尺寸仍按原来的房间大小缩回去 —— 页面没变大，每个像素变小了，
+ * 多出来的那一倍像素才有地方放细节。
+ *
+ * 和 tools/gen-assets.mjs 的 ART 必须是同一个数。
+ */
+export const ART = 2;
 /**
  * 墙的顶面高度 = 一格。
  *
@@ -867,8 +881,10 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
          */
         planRoom(window.innerWidth, window.innerHeight);
   const canvas = document.createElement('canvas');
-  canvas.width = plan.cols * TILE;
-  canvas.height = plan.rows * TILE + WALL_TOP_H;
+  // 内部像素是世界坐标的 ART 倍。CSS 尺寸不乘 ART ——
+  // 多出来的像素挤在原来的页面里，而不是把房间撑大。
+  canvas.width = plan.cols * TILE * ART;
+  canvas.height = (plan.rows * TILE + WALL_TOP_H) * ART;
   // 【必须和 canvas.height 用同一个算式】—— 差一个 WALL_TOP_H 的话，
   // 画布会纵向压缩 6%：像素画的每个像素高度都被压掉一点，
   // 表现是"糊"而不是"变形"，很难联想到尺寸不一致
@@ -1216,7 +1232,17 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
     }
 
     if (usable(sheet)) {
-      ctx?.drawImage(sheet, frame * SPR_W, 0, SPR_W, SPR_H, px, py, SPR_W, SPR_H);
+      ctx?.drawImage(
+        sheet,
+        frame * SPR_W * ART,
+        0,
+        SPR_W * ART,
+        SPR_H * ART,
+        px,
+        py,
+        SPR_W,
+        SPR_H,
+      );
       return;
     }
     // 素材没好时的兜底：色块，但至少颜色能区分敌我。
@@ -1286,10 +1312,10 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
      * 这样下面的绘制代码全部用【世界坐标】，不用到处 +16。
      * 顶部那一格留给最上面那排墙的顶面。
      */
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(ART, 0, 0, ART, 0, 0);
     ctx.fillStyle = zero ? '#0b0505' : '#07070b';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.setTransform(1, 0, 0, 1, 0, WALL_TOP_H);
+    ctx.fillRect(0, 0, canvas.width / ART, canvas.height / ART);
+    ctx.setTransform(ART, 0, 0, ART, 0, WALL_TOP_H);
 
     /*
      * 【两个判断不能混成一个】
@@ -1504,14 +1530,16 @@ export function startRtPrototype(root: HTMLElement, opts: RtStartOptions = {}): 
   function fitCanvas(): void {
     // 尺寸变化（转屏 / 地址栏收放）时重新算缩放。
     // 【不重新规划房间】—— 那等于把这一局重置了。
-    const s = Math.min(
-      (stage.clientWidth - 4) / canvas.width,
-      (stage.clientHeight - 4) / canvas.height,
-    );
+    // 用世界尺寸而不是画布像素来比。画布是 ART 倍，
+    // 若直接拿 canvas.width 去除，页面会被缩成一小条。
+    const worldW = canvas.width / ART;
+    const worldH = canvas.height / ART;
+    const s = Math.min((stage.clientWidth - 4) / worldW, (stage.clientHeight - 4) / worldH);
 
     const scale = pickScale(s);
-    canvas.style.width = `${canvas.width * scale}px`;
-    canvas.style.height = `${canvas.height * scale}px`;
+    // 显示尺寸按世界大小，不按画布像素。ART 倍的像素挤在同一块页面里。
+    canvas.style.width = `${worldW * scale}px`;
+    canvas.style.height = `${worldH * scale}px`;
   }
 
   function frame(now: number): void {
